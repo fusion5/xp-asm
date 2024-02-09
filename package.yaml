@@ -1,0 +1,31 @@
+default-extensions: 
+  - StrictData
+
+dependencies:
+  - base
+  - haskell-say
+  - text
+  - containers
+  - bytestring
+
+ghc-options:
+  - -Wall
+  - -Werror
+
+library:
+  source-dirs: 
+    - src
+
+executable:
+  main: Main.hs
+  source-dirs: 
+    - src
+
+tests:
+  xp-asm-test:
+    main: Main.hs
+    source-dirs: 
+      - test
+    dependencies:
+      - hspec
+      - xp-asm
