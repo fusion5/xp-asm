@@ -1,5 +1,7 @@
 default-extensions: 
   - StrictData
+  - RecordWildCards
+  - OverloadedStrings
 
 dependencies:
   - base
@@ -7,6 +9,10 @@ dependencies:
   - text
   - containers
   - bytestring
+  - binary
+  - safe-decimal
+  - transformers
+  - extra
 
 ghc-options:
   - -Wall
@@ -23,9 +29,10 @@ executable:
 
 tests:
   xp-asm-test:
-    main: Main.hs
+    main: MainTest
     source-dirs: 
       - test
+      - src
     dependencies:
       - hspec
-      - xp-asm
+        # - xp-asm

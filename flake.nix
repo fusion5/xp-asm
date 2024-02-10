@@ -22,7 +22,9 @@
       checks = self.packages;
       devShell = forAllSystems (system: let haskellPackages = nixpkgsFor.${system}.haskellPackages;
         in haskellPackages.shellFor {
-          packages = p: [self.packages.${system}.xp-asm];
+          packages = p: [
+            self.packages.${system}.xp-asm
+          ];
           withHoogle = true;
           buildInputs = with haskellPackages; [
             haskell-language-server
@@ -30,7 +32,7 @@
             cabal-install
           ];
         # Change the prompt to show that you are in a devShell
-        shellHook = "export PS1='\\e[1;34mdev > \\e[0m'";
+        # shellHook = "export PS1='\\e[1;34mdev > \\e[0m'";
         });
   };
 }
