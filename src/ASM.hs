@@ -54,13 +54,13 @@ scanLabels s = aslsLabels <$> foldM scanAtom initialState s
       }
 
 safePlus :: (Ord a, Num a, Bounded a) => a -> a -> Either AssemblyError a
-safePlus = boundedBinopMapEx Arithmetic B.plusBounded
+safePlus = boundedBinopMapEx (Arithmetic . SEW) B.plusBounded
 
 safeMinus :: (Ord a, Num a, Bounded a) => a -> a -> Either AssemblyError a
-safeMinus = boundedBinopMapEx Arithmetic B.plusBounded
+safeMinus = boundedBinopMapEx (Arithmetic . SEW) B.plusBounded
 
 safeDowncast :: (Integral a, Bounded a) => Integer -> Either AssemblyError a
-safeDowncast = Either.mapLeft Arithmetic . B.fromIntegerBounded
+safeDowncast = Either.mapLeft (Arithmetic . SEW) . B.fromIntegerBounded
 
 -- This might be expensive...
 operationWidth :: (Num address, Sized op) => op -> address
@@ -176,4 +176,4 @@ assemble
 assemble cfg input = do
   labelMap <- scanLabels input
   solvedReferences <- solveReferences cfg labelMap input
-  F.fold <$> mapM asmToBin solvedReferences
+  F.fold <$> mapM (Either.mapLeft OpcodeToByteString . asmToBin) solvedReferences

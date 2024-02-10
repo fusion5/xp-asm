@@ -11,21 +11,29 @@ import qualified Data.Int as Int
 import qualified Control.Exception as Exception
 
 data AssemblyError
-  = Arithmetic Exception.SomeException
+  = Arithmetic SomeExceptionWrap
   | ReferenceMissing LabelText
   | FromLabelAfterTo
   | ReferenceTypeNotSupportedInOpcode Text.Text
-  deriving (Show)
+  | OpcodeToByteString AssemblyError
+  deriving (Show, Eq)
 
 instance Exception.Exception AssemblyError
 
+newtype SomeExceptionWrap = SEW Exception.SomeException deriving (Show)
+
+instance Eq SomeExceptionWrap where
+  (SEW se1) == (SEW se2) = show se1 == show se2
+
 -- Defining a manual instance because SomeException doesn't make it possible to derive
+{-
 instance Eq AssemblyError where
   Arithmetic e1 == Arithmetic e2 | show e1 == show e2 = True
   ReferenceMissing l1 == ReferenceMissing l2 | l1 == l2 = True
   FromLabelAfterTo == FromLabelAfterTo = True
   ReferenceTypeNotSupportedInOpcode t1 == ReferenceTypeNotSupportedInOpcode t2 = t1 == t2
   _ == _ = False
+-}
 
 type LabelText = Text.Text
 
