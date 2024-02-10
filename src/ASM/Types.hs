@@ -6,27 +6,25 @@ import GHC.Generics
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
-import qualified Data.ByteString as BS
-import qualified Data.Binary as Bin
-import qualified Data.Binary.Put as Bin
+import qualified Data.ByteString.Lazy as BS
 import qualified Data.Int as Int
 import qualified Control.Exception as Exception
 
 data AssemblyError
-  = ScanArithmetic Exception.SomeException
+  = Arithmetic Exception.SomeException
   | ReferenceMissing LabelText
-  | ReferenceArithmetic Exception.SomeException
   | FromLabelAfterTo
+  | ReferenceTypeNotSupportedInOpcode Text.Text
   deriving (Show)
 
 instance Exception.Exception AssemblyError
 
 -- Defining a manual instance because SomeException doesn't make it possible to derive
 instance Eq AssemblyError where
-  ScanArithmetic e1 == ScanArithmetic e2 | show e1 == show e2 = True
+  Arithmetic e1 == Arithmetic e2 | show e1 == show e2 = True
   ReferenceMissing l1 == ReferenceMissing l2 | l1 == l2 = True
-  ReferenceArithmetic e1 == ReferenceArithmetic e2 | show e1 == show e2 = True
   FromLabelAfterTo == FromLabelAfterTo = True
+  ReferenceTypeNotSupportedInOpcode t1 == ReferenceTypeNotSupportedInOpcode t2 = t1 == t2
   _ == _ = False
 
 type LabelText = Text.Text
@@ -36,8 +34,8 @@ class Sized a where
 
 -- | The Binary class doesn't allow for nice error handling, therefore we do it using a
 -- different one.
-class ASMToBinary a where
-  asmToBin :: a -> Either AssemblyError Bin.Put
+class ToBS a where
+  asmToBin :: a -> Either AssemblyError BS.ByteString
 
 data AddressInfo address
   = AddressInfo
@@ -99,11 +97,10 @@ data Atom op address
   | AData BS.ByteString
   deriving (Show, Eq, Generic)
 
-instance Bin.Binary (op address) => Bin.Binary (Atom op address) where
-  put (AOp op) = Bin.put op
-  put (ALabel _) = mempty
-  put (AData bs) = Bin.putByteString bs
-  get = fail "Parsing atoms is not supported..."
+instance ToBS (op address) => ToBS (Atom op address) where
+  asmToBin (AOp op)   = asmToBin op
+  asmToBin (ALabel _) = pure mempty
+  asmToBin (AData bs) = pure bs
 
 -- | Constant parameters for the assembler.
 data Config address
