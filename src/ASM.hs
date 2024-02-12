@@ -43,7 +43,7 @@ scanLabels
   , Ord address
   , Bounded address
   )
-  => Seq.Seq (Atom op Reference)
+  => Seq.Seq (Atom (op Reference))
   -> Either AssemblyError (Map.Map LabelText (AddressInfo address))
 scanLabels s = aslsLabels <$> foldM scanAtom initialState s
   where
@@ -69,7 +69,7 @@ operationWidth = fromIntegral . sizeof
 scanAtom
   :: (Sized (op Reference), Num address, Ord address, Bounded address)
   => StateLabelScan address
-  -> Atom op Reference
+  -> Atom (op Reference)
   -> Either AssemblyError (StateLabelScan address)
 scanAtom s@StateLabelScan {..} = go
   where
@@ -104,8 +104,8 @@ solveReferences
   :: (Traversable op, Bounded address, Ord address, Num address, Sized (op Reference))
   => Config address
   -> Map.Map LabelText (AddressInfo address)
-  -> Seq.Seq (Atom op Reference)
-  -> Either AssemblyError (Seq.Seq (Atom op (SolvedReference address)))
+  -> Seq.Seq (Atom (op Reference))
+  -> Either AssemblyError (Seq.Seq (Atom (op (SolvedReference address))))
 solveReferences c labelDictionary s
   = asrsAtoms <$> foldM (solveAtomReference c labelDictionary) initialState s
   where
@@ -119,7 +119,7 @@ solveAtomReference
   => Config address
   -> Map.Map LabelText (AddressInfo address)
   -> StateReferenceSolve op address
-  -> Atom op Reference
+  -> Atom (op Reference)
   -> Either AssemblyError (StateReferenceSolve op address)
 solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go -- (AOp op1)
   where
@@ -171,7 +171,7 @@ assemble
   , ToBS (op (SolvedReference address))
   )
   => Config address
-  -> Seq.Seq (Atom op Reference)
+  -> Seq.Seq (Atom (op Reference))
   -> Either AssemblyError BS.ByteString
 assemble cfg input = do
   labelMap <- scanLabels input

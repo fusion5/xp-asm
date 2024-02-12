@@ -2,7 +2,9 @@
   # inspired by: https://serokell.io/blog/practical-nix-flakes#packaging-existing-applications
   description = "A Hello World in Haskell with a dependency and a devShell";
   inputs.nixpkgs.url = "nixpkgs";
-  outputs = { self, nixpkgs }:
+  inputs.feedback.url = github:NorfairKing/feedback;
+
+  outputs = { self, nixpkgs, feedback }:
     let
       supportedSystems = [ "x86_64-linux" "x86_64-darwin" ];
       forAllSystems = f: nixpkgs.lib.genAttrs supportedSystems (system: f system);
@@ -26,10 +28,11 @@
             self.packages.${system}.xp-asm
           ];
           withHoogle = true;
-          buildInputs = with haskellPackages; [
-            haskell-language-server
-            ghcid
-            cabal-install
+          buildInputs = [
+            haskellPackages.haskell-language-server
+            haskellPackages.ghcid
+            haskellPackages.cabal-install
+            feedback.packages.${system}.default
           ];
         # Change the prompt to show that you are in a devShell
         # shellHook = "export PS1='\\e[1;34mdev > \\e[0m'";

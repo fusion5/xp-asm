@@ -26,14 +26,6 @@ instance Eq SomeExceptionWrap where
   (SEW se1) == (SEW se2) = show se1 == show se2
 
 -- Defining a manual instance because SomeException doesn't make it possible to derive
-{-
-instance Eq AssemblyError where
-  Arithmetic e1 == Arithmetic e2 | show e1 == show e2 = True
-  ReferenceMissing l1 == ReferenceMissing l2 | l1 == l2 = True
-  FromLabelAfterTo == FromLabelAfterTo = True
-  ReferenceTypeNotSupportedInOpcode t1 == ReferenceTypeNotSupportedInOpcode t2 = t1 == t2
-  _ == _ = False
--}
 
 type LabelText = Text.Text
 
@@ -97,15 +89,15 @@ data SolvedReference address
     }
   deriving (Show)
 
--- | The op type is a subset of the instruction set, e.g. for x86 jmp, mov, etc.
+-- | The operation type is a subset of the instruction set, e.g. for x86 jmp, mov, etc.
 -- It is polymorphic in the representation of address references.
-data Atom op address
-  = AOp (op address)
+data Atom operation
+  = AOp operation
   | ALabel LabelText
   | AData BS.ByteString
   deriving (Show, Eq, Generic)
 
-instance ToBS (op address) => ToBS (Atom op address) where
+instance ToBS operation => ToBS (Atom operation) where
   asmToBin (AOp op)   = asmToBin op
   asmToBin (ALabel _) = pure mempty
   asmToBin (AData bs) = pure bs
@@ -137,6 +129,6 @@ data StateLabelScan address
 -- | The state of the assembler, i.e. both inputs and outputs.
 data StateReferenceSolve op address
   = StateReferenceSolve
-    { asrsAtoms :: Seq.Seq (Atom op (SolvedReference address))
+    { asrsAtoms :: Seq.Seq (Atom (op (SolvedReference address)))
     , asrsRelativeVAOffset :: address
     }

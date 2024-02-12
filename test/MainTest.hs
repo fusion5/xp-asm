@@ -62,7 +62,7 @@ instance ASM.ToBS (TestOpcode (ASM.SolvedReference Word.Word32)) where
 -- emptySeqOut :: Seq.Seq (Atom (TestOpcode Int.Int64))
 -- emptySeqOut = Seq.fromList []
 
-testSeq :: Seq.Seq (ASM.Atom TestOpcode ASM.Reference)
+testSeq :: Seq.Seq (ASM.Atom (TestOpcode ASM.Reference))
 testSeq = Seq.fromList [ASM.AOp (JumpTo (ASM.RefVA "test"))]
 
 defaultConfig :: ASM.Config Word.Word32
@@ -70,7 +70,7 @@ defaultConfig = ASM.Config {..}
   where
     acVirtualBaseAddress = 0
 
-emptyInput :: Seq.Seq (ASM.Atom TestOpcode ASM.Reference)
+emptyInput :: Seq.Seq (ASM.Atom (TestOpcode ASM.Reference))
 emptyInput = Seq.fromList []
 
 main :: IO ()
