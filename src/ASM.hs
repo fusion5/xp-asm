@@ -8,8 +8,9 @@ module ASM
   , safeDowncast
   ) where
 
+import Common
+
 import ASM.Types
-import Control.Monad
 
 import qualified Data.Sequence as Seq
 import qualified Data.ByteString.Lazy as BS
@@ -17,7 +18,8 @@ import qualified Data.Map as Map
 import qualified Numeric.Decimal.BoundedArithmetic as B
 import qualified Data.Either.Extra as Either
 import qualified Control.Exception as Exception
-import qualified Data.Foldable as F
+-- import qualified Data.Foldable as F
+import qualified Data.Binary.Put as Bin
 
 -- | A simple assembler that produces one object, without imported/exported references.
 -- There are two passes:
@@ -156,10 +158,10 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go -
       targetRVA <- aiRelativeVA <$> query labelText
       pure $ SolvedRefForwardOffsetVA currentRVA targetRVA
     solveReference _ (RefLabelDifferenceIA {..}) = do
-      from <- aiIA <$> query difiaFrom
-      to   <- aiIA <$> query difiaTo
-      when (from > to) $ Left FromLabelAfterTo
-      pure $ SolvedRefLabelDifferenceIA from to
+      aFrom <- aiIA <$> query difiaFrom
+      aTo   <- aiIA <$> query difiaTo
+      when (aFrom > aTo) $ Left FromLabelAfterTo
+      pure $ SolvedRefLabelDifferenceIA aFrom aTo
 
 assemble
   ::
@@ -176,4 +178,16 @@ assemble
 assemble cfg input = do
   labelMap <- scanLabels input
   solvedReferences <- solveReferences cfg labelMap input
-  F.fold <$> mapM (Either.mapLeft OpcodeToByteString . asmToBin) solvedReferences
+  let f = mapM_ asmToBin solvedReferences
+  let k = runExceptT f
+  let (eith, result) = Bin.runPutM k
+  Either.mapRight (const result) eith
+  {-
+  q <- runExceptT $ F.fold <$> mapM
+    ( {- Either.mapRight Bin.runPut
+    . Either.mapLeft OpcodeToByteString
+    runExceptT
+    -}
+    asmToBin
+    ) solvedReferences
+  -}

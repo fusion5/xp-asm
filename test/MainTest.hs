@@ -6,6 +6,8 @@ module MainTest where
 
 import Test.Hspec
 
+import Common
+
 import qualified ASM
 import qualified ASM.Types as ASM
 
@@ -15,8 +17,6 @@ import qualified Data.Binary as Bin
 import qualified Data.Binary.Put as Bin
 import qualified Data.Word as Word
 import qualified Data.Text as Text
-
-import GHC.Generics
 
 -- Example opcodes we pass to the assembler:
 -- input:
@@ -42,17 +42,16 @@ instance ASM.Sized (TestOpcode a) where
 
 instance ASM.ToBS (TestOpcode (ASM.SolvedReference Word.Word32)) where
   asmToBin (JumpTo (ASM.SolvedRefVA i32))
-    = pure $ Bin.runPut $ do
-        Bin.putWord8 0x01
-        Bin.putWord32le (fromIntegral i32)
+    = do
+        lift $ Bin.putWord8 0x01
+        lift $ Bin.putWord32le (fromIntegral i32)
   asmToBin (JumpRelative (ASM.SolvedRefForwardOffsetVA {..}))
     = do
-      delta   <- sfoCurrentVA `ASM.safeMinus` sfoTargetVA
-      deltaW8 <- ASM.safeDowncast (fromIntegral delta)
-      pure $ Bin.runPut $ do
-        Bin.putWord8 0x02
-        Bin.putWord8 deltaW8
-  asmToBin x = Left
+      delta   <- except $ sfoCurrentVA `ASM.safeMinus` sfoTargetVA
+      deltaW8 <- except $ ASM.safeDowncast (fromIntegral delta)
+      lift $ Bin.putWord8 0x02
+      lift $ Bin.putWord8 deltaW8
+  asmToBin x = throwE
     $ ASM.ReferenceTypeNotSupportedInOpcode $
       "Invalid combination of opcodes and references: " <> Text.pack (show x)
 
@@ -62,8 +61,11 @@ instance ASM.ToBS (TestOpcode (ASM.SolvedReference Word.Word32)) where
 -- emptySeqOut :: Seq.Seq (Atom (TestOpcode Int.Int64))
 -- emptySeqOut = Seq.fromList []
 
-testSeq :: Seq.Seq (ASM.Atom (TestOpcode ASM.Reference))
-testSeq = Seq.fromList [ASM.AOp (JumpTo (ASM.RefVA "test"))]
+testSeq1 :: Seq.Seq (ASM.Atom (TestOpcode ASM.Reference))
+testSeq1 = Seq.fromList [ASM.AOp (JumpTo (ASM.RefVA "test"))]
+
+testSeq2 :: Seq.Seq (ASM.Atom (TestOpcode ASM.Reference))
+testSeq2 = Seq.fromList [ASM.AData "TEST"]
 
 defaultConfig :: ASM.Config Word.Word32
 defaultConfig = ASM.Config {..}
@@ -75,5 +77,7 @@ emptyInput = Seq.fromList []
 
 main :: IO ()
 main = hspec $ do
-  it "Empty list assembly returns in empty BS" $ do
+  it "Empty list assembly returns an empty BS" $
     ASM.assemble defaultConfig emptyInput `shouldBe` Right ""
+  it "Blabla" $
+    ASM.assemble defaultConfig testSeq2 `shouldBe` Right "TEST"

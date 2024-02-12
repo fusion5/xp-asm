@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 module ASM.Types where
 
-import GHC.Generics
+import Common
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
@@ -9,6 +9,8 @@ import qualified Data.Sequence as Seq
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.Int as Int
 import qualified Control.Exception as Exception
+-- import qualified Data.Binary as Bin
+import qualified Data.Binary.Put as Bin
 
 data AssemblyError
   = Arithmetic SomeExceptionWrap
@@ -32,10 +34,10 @@ type LabelText = Text.Text
 class Sized a where
   sizeof :: a -> Int.Int64
 
--- | The Binary class doesn't allow for nice error handling, therefore we do it using a
+-- | The Binary class doesn't allow for nice error handling, therefore we use ExceptT
 -- different one.
 class ToBS a where
-  asmToBin :: a -> Either AssemblyError BS.ByteString
+  asmToBin :: a -> ExceptT AssemblyError Bin.PutM ()
 
 data AddressInfo address
   = AddressInfo
@@ -100,7 +102,7 @@ data Atom operation
 instance ToBS operation => ToBS (Atom operation) where
   asmToBin (AOp op)   = asmToBin op
   asmToBin (ALabel _) = pure mempty
-  asmToBin (AData bs) = pure bs
+  asmToBin (AData bs) = lift $ Bin.putLazyByteString bs
 
 -- | Constant parameters for the assembler.
 data Config address
@@ -109,7 +111,7 @@ data Config address
       acVirtualBaseAddress :: address
     }
 
--- | The state of the label scanning process
+-- | The state of the label scanner
 data StateLabelScan address
   = StateLabelScan
     { -- | Current offset in generated image file (from the beginning)
@@ -126,7 +128,7 @@ data StateLabelScan address
     , aslsLabels :: Map.Map LabelText (AddressInfo address)
     }
 
--- | The state of the assembler, i.e. both inputs and outputs.
+-- | The state of the reference solver
 data StateReferenceSolve op address
   = StateReferenceSolve
     { asrsAtoms :: Seq.Seq (Atom (op (SolvedReference address)))
