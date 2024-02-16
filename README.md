@@ -8,4 +8,4 @@ Repl:
 cabal repl xp-asm
 
 Test: 
-cabal test xp-asm-test --enable-tests
+feedback -- cabal test xp-asm-test --enable-tests
