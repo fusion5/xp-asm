@@ -1,11 +1,17 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeOperators #-}
+{-- LANGUAGE TypeSynonymInstances #-}
+{-- LANGUAGE FlexibleInstances #-}
+{-- LANGUAGE UndecidableInstances #-}
+
 module ASM.Types where
 
 import Common
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
-import qualified Data.Sequence as Seq
+-- import qualified Data.Sequence as Seq
 -- import qualified Data.Int as Int
 import qualified Control.Exception as Exception
 import qualified Data.Vector.Sized as Vec
@@ -33,13 +39,20 @@ type LabelText = Text.Text
 class ByteSized a where
   sizeof :: a -> Natural
 
-class ToWord8s a where
-  toWord8s :: a -> Either AssemblyError (Seq.Seq Word8)
-  safe :: forall n . a -> Vec.Vector n Word8
+class ToWord8s (opcode :: Nat -> Type) where
+  safe :: forall n . opcode n -> Vec.Vector n Word8
 
-instance ToWord8s a => ToWord8s (Seq.Seq a) where
-  toWord8s as = join <$> mapM toWord8s as
-  safe _as = undefined
+data Container (operation :: Nat -> Type) (n :: Nat) where
+    -- One :: a n -> Container a n
+    -- Two :: a n1 -> a n2 -> Container a (n1 + n2)
+    Nil  :: Container a 0
+    Cons :: operation n1
+         -> Container operation n2
+         -> Container operation (n1 + n2)
+
+instance ToWord8s opcode => ToWord8s (Container opcode) where
+  safe Nil = Vec.empty
+  safe (Cons el container) = safe el Vec.++ safe container
 
 class (Num a, Ord a, Bounded a) => Address a where
 
@@ -84,18 +97,15 @@ data Reference address
       }
   deriving (Show)
 
--- | The operation type is a subset of the instruction set, e.g. for x86 jmp, mov, etc.
--- It can be, but not necessarily, polymorphic in the representation of address references.
-data Atom operation
-  = Atom operation
+{-
+data Atom (operation :: Nat -> Type) (n :: Nat)
+  = Atom (operation n)
   | Label LabelText
   deriving (Show, Eq, Generic)
 
 instance ToWord8s operation => ToWord8s (Atom operation) where
-  toWord8s (Atom op) = toWord8s op
-  toWord8s (Label _) = pure mempty
-  safe (Atom _op) = undefined -- safe op
-  safe (Label _) = undefined -- Vec.empty --
+  safe (Atom op) = safe op
+  safe (Label _) = Vec.empty --
   {- Produces:
       Expected: Vec.Vector n Word8
         Actual: Vec.Vector 0 Word8
@@ -103,7 +113,17 @@ instance ToWord8s operation => ToWord8s (Atom operation) where
         the type signature for:
           safe :: forall (n :: Nat). Atom operation -> Vec.Vector n Word8
           -}
+-}
 
+-- | The operation type is a subset of the instruction set, e.g. for x86 jmp, mov, etc.
+-- It can be, but not necessarily, polymorphic in the representation of address references.
+data Atom (operation :: Nat -> Type) (n :: Nat) where
+  Atom :: operation n -> Atom operation n
+  Label :: LabelText   -> Atom operation 0
+
+instance ToWord8s operation => ToWord8s (Atom operation) where
+  safe (Atom op) = safe op
+  safe (Label _) = Vec.empty
 
 -- | Constant parameters for the assembler.
 data Config address
@@ -130,8 +150,8 @@ data StateLabelScan address
     }
 
 -- | The state of the reference solver
-data StateReferenceSolve op address
+data StateReferenceSolve op address n
   = StateReferenceSolve
-    { asrsAtoms :: Seq.Seq (Atom (op (Reference address)))
+    { asrsAtoms :: Container (Atom (op (Reference address))) n
     , asrsRelativeVAOffset :: address
     }
