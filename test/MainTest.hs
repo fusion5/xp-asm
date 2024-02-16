@@ -104,6 +104,9 @@ convert (JumpTo2 (ASM.RefVA _i32)) =
 convert (Literal2 w8) = Vec.fromTuple (0x03, w8)
 convert _ = error "AA"
 
+-- Provide code for mapping addresses/references?
+instance ASM.FunctorSized Test2 where
+
 
 main :: IO ()
 main = hspec $ do

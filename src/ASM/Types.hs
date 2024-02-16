@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE RankNTypes #-}
+
 {-- LANGUAGE TypeSynonymInstances #-}
 {-- LANGUAGE FlexibleInstances #-}
 {-- LANGUAGE UndecidableInstances #-}
@@ -40,15 +42,87 @@ class ByteSized a where
   sizeof :: a -> Natural
 
 class ToWord8s (opcode :: Nat -> Type) where
+  -- TODO: Add Either
   safe :: forall n . opcode n -> Vec.Vector n Word8
 
 data Container (operation :: Nat -> Type) (n :: Nat) where
     -- One :: a n -> Container a n
     -- Two :: a n1 -> a n2 -> Container a (n1 + n2)
     Nil  :: Container a 0
-    Cons :: operation n1
+    Cons :: (KnownNat n1, KnownNat n2, n ~ n1 + n2)
+         => operation n1
          -> Container operation n2
          -> Container operation (n1 + n2)
+
+-- Needed because we need the forall qualifiers on the counts. Is there a simpler way?
+newtype FoldCallback m state operation =
+  FoldCallback
+    (  forall n1 n2 . (KnownNat n1, KnownNat n2)
+    => (state n1 -> operation n2 -> m (state (n2 + n1)))
+    )
+
+foldMNats
+  :: (Monad m)
+  => FoldCallback m state operation
+  -> state 0
+  -> Container operation n
+  -> m (state n)
+foldMNats _            e Nil = pure e
+foldMNats (FoldCallback f) e (Cons op container) = do
+  x <- foldMNats (FoldCallback f) e container
+  f x op
+
+-- Because we cannot derive Functor for our opcode GADT
+class FunctorSized (c :: (Nat -> Type) -> Nat -> Type) where
+  fmapSized :: forall (a :: Nat -> Type) (b :: Nat -> Type) (n :: Nat)
+            . (a n -> b n) -> c a n -> c b n
+
+-- Corresponds to a -> m b
+newtype MapMFunction a b =
+  MapMFunction (forall (n :: Nat) . KnownNat n => a n -> Either AssemblyError (b n))
+
+-- The problem is we cannot sequenceM the eithers without losing the size information.
+-- This should fix that.
+newtype EitherSized (c :: Nat -> Type) (n :: Nat) =
+  EitherSized (Either AssemblyError (c n))
+
+-- sequenceA :: Applicative f => t (f a) -> f (t a)
+sequenceANats
+  :: forall
+     (n :: Nat)
+     (container :: (Nat -> Type) -> Nat -> Type)
+     (a :: Nat -> Type)
+  .  (FunctorSized container, KnownNat n)
+  => container (EitherSized a) n
+  -> EitherSized (container a) n
+sequenceANats = mapMNats (MapMFunction eithersizedToEither) -- . eitherToEithersized
+
+mapMNats
+  :: forall
+     (n :: Nat)
+     (container :: (Nat -> Type) -> Nat -> Type)
+     (a :: Nat -> Type)
+     (b :: Nat -> Type)
+  .  (FunctorSized container, KnownNat n)
+  => MapMFunction a b -> container a n -> EitherSized (container b) n
+mapMNats (MapMFunction f) = sequenceANats . fmapSized (eitherToEithersized . f)
+
+eitherToEithersized
+  :: forall (a :: Nat -> Type) (n :: Nat)
+  .  Either AssemblyError (a n)
+  -> EitherSized a n
+eitherToEithersized = EitherSized
+
+eithersizedToEither
+  :: forall (a :: Nat -> Type) (n :: Nat)
+  .  EitherSized a n
+  -> Either AssemblyError (a n)
+eithersizedToEither (EitherSized e) = e
+
+{- do
+  x :: b n <- f object
+  pure undefined
+  -}
 
 instance ToWord8s opcode => ToWord8s (Container opcode) where
   safe Nil = Vec.empty
@@ -133,7 +207,7 @@ data Config address
     }
 
 -- | The state of the label scanner
-data StateLabelScan address
+data StateLabelScan address (n :: Nat)
   = StateLabelScan
     { -- | Current offset in generated image file (from the beginning)
       aslsIAOffset :: address
@@ -150,7 +224,7 @@ data StateLabelScan address
     }
 
 -- | The state of the reference solver
-data StateReferenceSolve op address n
+data StateReferenceSolve (op :: Type {- address -} -> Nat {- n -} -> Type) address n
   = StateReferenceSolve
     { asrsAtoms :: Container (Atom (op (Reference address))) n
     , asrsRelativeVAOffset :: address

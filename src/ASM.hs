@@ -1,3 +1,6 @@
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE GADTs #-}
+
 module ASM
   ( assemble
   , Config (..)
@@ -10,13 +13,12 @@ import Common
 
 import ASM.Types
 
-import qualified Data.Sequence as Seq
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.Map as Map
 import qualified Numeric.Decimal.BoundedArithmetic as B
 import qualified Data.Either.Extra as Either
 import qualified Control.Exception as Exception
-import qualified Data.Foldable as F
+import qualified Data.Vector.Sized as Vec
 
 -- | A simple assembler that produces one object, without imported/exported references.
 -- There are two passes:
@@ -42,13 +44,15 @@ boundedBinopMapEx ex op o1 o2
 scanLabels
   ::
   ( Address address
-  , Functor op
-  , ByteSized (op (Reference LabelText))
+  , ToWord8s (op (Reference LabelText))
+  , KnownNat n
   )
-  => Seq.Seq (Atom (op (Reference LabelText)))
+  => Container (Atom (op (Reference LabelText))) n
   -> Either AssemblyError (Map.Map LabelText (AddressInfo address))
-scanLabels s = aslsLabels <$> foldM scanAtom initialState s
+scanLabels s
+    = aslsLabels <$> foldMNats (FoldCallback scanAtom) initialState s
   where
+    -- initialState :: Address address => StateLabelScan address 0
     initialState = StateLabelScan
       { aslsIAOffset = 0
       , aslsRelativeVAOffset = 0
@@ -65,14 +69,14 @@ safeDowncast :: (Integral a, Bounded a) => Integer -> Either AssemblyError a
 safeDowncast = Either.mapLeft (Arithmetic . SEW) . B.fromIntegerBounded
 
 -- This might be expensive...
-operationWidth :: (Num address, ByteSized op) => op -> address
-operationWidth = fromIntegral . sizeof
+operationWidth :: (Address address, ToWord8s opcode, KnownNat n) => opcode n -> address
+operationWidth = fromIntegral . Vec.length . safe
 
 scanAtom
-  :: (ByteSized ops, Address address)
-  => StateLabelScan address
-  -> Atom ops
-  -> Either AssemblyError (StateLabelScan address)
+  :: (Address address, ToWord8s opcode, KnownNat n1, KnownNat n2)
+  => StateLabelScan address n1
+  -> Atom opcode n2
+  -> Either AssemblyError (StateLabelScan address (n2 + n1))
 scanAtom s@StateLabelScan {..} = go
   where
     go (Atom op) = do
@@ -94,37 +98,40 @@ scanAtom s@StateLabelScan {..} = go
 -- like in scanLabels. Perhaps this duplicate operation could be factored out, but it shouldn't
 -- be too expensive...
 solveReferences
-  :: (Traversable op, Address address, ByteSized (op (Reference LabelText)))
+  :: (Address address, ToWord8s (op (Reference LabelText)))
   => Config address
   -> Map.Map LabelText (AddressInfo address)
-  -> Seq.Seq (Atom (op (Reference LabelText)))
-  -> Either AssemblyError (Seq.Seq (Atom (op (Reference address))))
+  -> Container (Atom (op (Reference LabelText))) n
+  -> Either AssemblyError (Container (Atom (op (Reference address))) n)
 solveReferences c labelDictionary s
-  = asrsAtoms <$> foldM (solveAtomReference c labelDictionary) initialState s
+    = asrsAtoms <$> foldMNats (FoldCallback $ solveAtomReference c labelDictionary) initialState s
   where
     initialState = StateReferenceSolve
-      { asrsAtoms = Seq.empty
+      { asrsAtoms = Nil
       , asrsRelativeVAOffset = 0
       }
 
 solveAtomReference
-  :: (Traversable op, Address address, ByteSized (op (Reference LabelText)))
+  :: (Address address, ToWord8s (op (Reference LabelText)))
   => Config address
   -> Map.Map LabelText (AddressInfo address)
-  -> StateReferenceSolve op address
-  -> Atom (op (Reference LabelText))
-  -> Either AssemblyError (StateReferenceSolve op address)
-solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go
+  -> StateReferenceSolve op address n1
+  -> Atom (op (Reference LabelText)) n2
+  -> Either AssemblyError (StateReferenceSolve op address (n2 + n1))
+solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..}
+  = go
   where
-    go (Atom op1) = do
-      let width = operationWidth op1
-      op2 <- Atom <$> Prelude.mapM (solveReference asrsRelativeVAOffset) op1
-      newRVA <- width `safePlus` asrsRelativeVAOffset
-      pure s {
-        asrsAtoms = asrsAtoms Seq.|> op2
-      , asrsRelativeVAOffset = newRVA
-      }
-    go (Label _) = pure s -- self-solve labels? no need, discard them...
+    go (Atom op) = do
+      newOp <- Atom <$> mapMNats (MapMFunction $ solveReference asrsRelativeVAOffset) op
+      newRVA <- operationWidth op `safePlus` asrsRelativeVAOffset
+      pure s
+        { asrsAtoms = newOp `Cons` asrsAtoms
+        , asrsRelativeVAOffset = newRVA
+        }
+    go label@(Label _) =
+      pure s
+        { asrsAtoms = undefined -- label `Cons` asrsAtoms
+        }
 
     query labelText
       = Either.maybeToEither
@@ -152,17 +159,17 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go
 assemble
   ::
   ( Address address
-  , Traversable op
-  , ByteSized (op (Reference LabelText))
+  , ToWord8s (op (Reference LabelText))
   , ToWord8s (op (Reference address))
+  , KnownNat n
   )
   => Config address
-  -> Seq.Seq (Atom (op (Reference LabelText)))
+  -> Container (Atom (op (Reference LabelText))) n
   -> Either AssemblyError BS.ByteString
 assemble cfg input = do
   labelMap <- scanLabels input
   solvedReferences <- solveReferences cfg labelMap input
-  inlined <- toWord8s solvedReferences
+  let inlined = safe solvedReferences
   pure $ toByteString inlined
   where
-    toByteString = BS.pack . F.toList
+    toByteString = BS.pack . Vec.toList
