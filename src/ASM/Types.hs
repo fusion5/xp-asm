@@ -8,7 +8,6 @@ import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Int as Int
 import qualified Control.Exception as Exception
-import qualified Data.Vector as Vector
 
 data AssemblyError
   = Arithmetic SomeExceptionWrap
@@ -16,6 +15,7 @@ data AssemblyError
   | FromLabelAfterTo
   | ReferenceTypeNotSupportedInOpcode Text.Text
   | OpcodeToByteString AssemblyError
+  | InternalError Text.Text
   deriving (Show, Eq)
 
 instance Exception.Exception AssemblyError
@@ -29,13 +29,16 @@ instance Eq SomeExceptionWrap where
 
 type LabelText = Text.Text
 
-class Sized a where
+class ByteSized a where
   sizeof :: a -> Int.Int64
 
 -- | The Binary class doesn't allow for nice error handling, therefore we use ExceptT
 -- different one.
-class ToBS a where
-  asmToBin :: a -> Either AssemblyError (Vector.Vector Word8)
+class ToWord8s a where
+  toWord8s :: a -> Either AssemblyError (Seq.Seq Word8)
+
+instance ToWord8s a => ToWord8s (Seq.Seq a) where
+  toWord8s as = join <$> mapM toWord8s as
 
 data AddressInfo address
   = AddressInfo
@@ -48,45 +51,34 @@ data AddressInfo address
 -- | Referrer --- reference --> Referree
 -- The type of references defined here must cover the needs of all assemblers
 -- defined using ASM.
-data Reference
+data Reference address
   = -- | Virtual Address (in-memory address) of label
-    RefVA LabelText
+    RefVA address
   | -- | Relative Virtual Address (in-memory address minus image base
     -- address) of label
-    RefRelativeVA LabelText
+    RefRelativeVA address
   | -- | Image Address (in-file address, offset from the beginning of)
     -- the file) of label
-    RefIA LabelText
+    RefIA address
   | -- | Offset to another label's Virtual Address from the Virtual Address of
     -- the referrer begin location. A signed value. Used for relative jumps. If positive
     -- then the target is below. If negative then the target is above. For x64 note that
     -- you are interested in the offset relative to the referrer END location, so you will
     -- have to add the width of the reference.
-    RefForwardOffsetVA LabelText
+    RefForwardOffsetVA address
+  | RefForwardOffsetVASolved
+      { refCurrentVA :: address -- From just after the reference
+      , refTargetVA  :: address
+      }
   | -- | The unsigned offset from the first label Image Address to the
     -- second one: the first label must be <= than the second one and
     -- the delta must fit the given Size (this is to be error-checked
     -- at run time). Helps to define executable file values.
     -- TODO: Couldn't we convert this to the delta between the current pos and a label?
     RefLabelDifferenceIA
-      { difiaFrom :: LabelText
-      , difiaTo   :: LabelText
+      { difiaFrom :: address
+      , difiaTo   :: address
       }
-
--- | The solver provides the addresses of the labels involved. But how they should be
--- processed is up to the library user.
-data SolvedReference address
-  = SolvedRefVA address
-  | SolvedRefRelativeVA address
-  | SolvedRefIA address
-  | SolvedRefForwardOffsetVA
-    { sfoCurrentVA :: address
-    , sfoTargetVA  :: address
-    }
-  | SolvedRefLabelDifferenceIA
-    { srdiaFrom :: address
-    , srdiaTo   :: address
-    }
   deriving (Show)
 
 -- | The operation type is a subset of the instruction set, e.g. for x86 jmp, mov, etc.
@@ -96,9 +88,9 @@ data Atom operation
   | ALabel LabelText
   deriving (Show, Eq, Generic)
 
-instance ToBS operation => ToBS (Atom operation) where
-  asmToBin (AOp op)   = asmToBin op
-  asmToBin (ALabel _) = pure mempty
+instance ToWord8s operation => ToWord8s (Atom operation) where
+  toWord8s (AOp op)   = toWord8s op
+  toWord8s (ALabel _) = pure mempty
 
 -- | Constant parameters for the assembler.
 data Config address
@@ -127,6 +119,6 @@ data StateLabelScan address
 -- | The state of the reference solver
 data StateReferenceSolve op address
   = StateReferenceSolve
-    { asrsAtoms :: Seq.Seq (Atom (op (SolvedReference address)))
+    { asrsAtoms :: Seq.Seq (Atom (op (Reference address)))
     , asrsRelativeVAOffset :: address
     }

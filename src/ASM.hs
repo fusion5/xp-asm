@@ -1,5 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
-
 module ASM
   ( assemble
   , Config (..)
@@ -19,7 +17,6 @@ import qualified Numeric.Decimal.BoundedArithmetic as B
 import qualified Data.Either.Extra as Either
 import qualified Control.Exception as Exception
 import qualified Data.Foldable as F
-import qualified Data.Vector as Vector
 
 -- | A simple assembler that produces one object, without imported/exported references.
 -- There are two passes:
@@ -41,11 +38,11 @@ scanLabels
   ::
   ( Num address
   , Functor op
-  , Sized (op Reference)
+  , ByteSized (op (Reference LabelText))
   , Ord address
   , Bounded address
   )
-  => Seq.Seq (Atom (op Reference))
+  => Seq.Seq (Atom (op (Reference LabelText)))
   -> Either AssemblyError (Map.Map LabelText (AddressInfo address))
 scanLabels s = aslsLabels <$> foldM scanAtom initialState s
   where
@@ -65,13 +62,13 @@ safeDowncast :: (Integral a, Bounded a) => Integer -> Either AssemblyError a
 safeDowncast = Either.mapLeft (Arithmetic . SEW) . B.fromIntegerBounded
 
 -- This might be expensive...
-operationWidth :: (Num address, Sized op) => op -> address
+operationWidth :: (Num address, ByteSized op) => op -> address
 operationWidth = fromIntegral . sizeof
 
 scanAtom
-  :: (Sized (op Reference), Num address, Ord address, Bounded address)
+  :: (ByteSized ops, Num address, Ord address, Bounded address)
   => StateLabelScan address
-  -> Atom (op Reference)
+  -> Atom ops
   -> Either AssemblyError (StateLabelScan address)
 scanAtom s@StateLabelScan {..} = go
   where
@@ -94,11 +91,11 @@ scanAtom s@StateLabelScan {..} = go
 -- like in scanLabels. Perhaps this duplicate operation could be factored out, but it shouldn't
 -- be too expensive...
 solveReferences
-  :: (Traversable op, Bounded address, Ord address, Num address, Sized (op Reference))
+  :: (Traversable op, Bounded address, Ord address, Num address, ByteSized (op (Reference LabelText)))
   => Config address
   -> Map.Map LabelText (AddressInfo address)
-  -> Seq.Seq (Atom (op Reference))
-  -> Either AssemblyError (Seq.Seq (Atom (op (SolvedReference address))))
+  -> Seq.Seq (Atom (op (Reference LabelText)))
+  -> Either AssemblyError (Seq.Seq (Atom (op (Reference address))))
 solveReferences c labelDictionary s
   = asrsAtoms <$> foldM (solveAtomReference c labelDictionary) initialState s
   where
@@ -108,11 +105,11 @@ solveReferences c labelDictionary s
       }
 
 solveAtomReference
-  :: (Traversable op, Num address, Ord address, Bounded address, Sized (op Reference))
+  :: (Traversable op, Num address, Ord address, Bounded address, ByteSized (op (Reference LabelText)))
   => Config address
   -> Map.Map LabelText (AddressInfo address)
   -> StateReferenceSolve op address
-  -> Atom (op Reference)
+  -> Atom (op (Reference LabelText))
   -> Either AssemblyError (StateReferenceSolve op address)
 solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go -- (AOp op1)
   where
@@ -133,22 +130,24 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go -
           (Map.lookup labelText labelDictionary)
 
     -- solveReference
-    --  :: address -> Reference -> Either AssemblyError (SolvedReference address)
+    --  :: add -> Reference LabelText -> Either AssemblyError (Reference add)
     solveReference _ (RefVA labelText) = do
       rva <- aiRelativeVA <$> query labelText
-      SolvedRefVA <$> rva `safePlus` acVirtualBaseAddress
+      RefVA <$> rva `safePlus` acVirtualBaseAddress
     solveReference _ (RefRelativeVA labelText) =
-      SolvedRefRelativeVA . aiRelativeVA <$> query labelText
+      RefRelativeVA . aiRelativeVA <$> query labelText
     solveReference _ (RefIA labelText) =
-      SolvedRefIA . aiIA <$> query labelText
+      RefIA . aiIA <$> query labelText
     solveReference currentRVA (RefForwardOffsetVA labelText) = do
       targetRVA <- aiRelativeVA <$> query labelText
-      pure $ SolvedRefForwardOffsetVA currentRVA targetRVA
+      pure $ RefForwardOffsetVASolved currentRVA targetRVA
     solveReference _ (RefLabelDifferenceIA {..}) = do
       aFrom <- aiIA <$> query difiaFrom
       aTo   <- aiIA <$> query difiaTo
       when (aFrom > aTo) $ Left FromLabelAfterTo
-      pure $ SolvedRefLabelDifferenceIA aFrom aTo
+      pure $ RefLabelDifferenceIA aFrom aTo
+    solveReference _ (RefForwardOffsetVASolved {}) =
+      Left $ InternalError "Received already solved VA to solve"
 
 assemble
   ::
@@ -156,15 +155,16 @@ assemble
   , Ord address
   , Bounded address
   , Traversable op
-  , Sized (op Reference)
-  , ToBS (op (SolvedReference address))
+  , ByteSized (op (Reference LabelText))
+  , ToWord8s (op (Reference address))
   )
   => Config address
-  -> Seq.Seq (Atom (op Reference))
+  -> Seq.Seq (Atom (op (Reference LabelText)))
   -> Either AssemblyError BS.ByteString
 assemble cfg input = do
   labelMap <- scanLabels input
   solvedReferences <- solveReferences cfg labelMap input
-  vectors <- Prelude.mapM asmToBin solvedReferences
-  let concatVectors = F.foldl' (<>) Vector.empty vectors
-  pure $ BS.pack $ Vector.toList concatVectors
+  inlined <- toWord8s solvedReferences
+  pure $ toByteString inlined
+  where
+    toByteString = BS.pack . F.toList
