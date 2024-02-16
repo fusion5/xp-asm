@@ -26,12 +26,14 @@ import qualified Data.ByteString.Lazy as BS
 data TestOpcode address
   = JumpTo address
   | JumpRelative address
+  | Literal Word8
   deriving (Show, Eq, Functor, Foldable, Traversable, Generic)
 
 -- | Warning, it should be tested that this matches the asmToBin lengths...
 instance ASM.ByteSized (TestOpcode a) where
   sizeof (JumpTo _)       = 1 + 4
   sizeof (JumpRelative _) = 1 + 1
+  sizeof (Literal _)      = 2
 
 instance ASM.Address Word32
 
@@ -44,6 +46,8 @@ instance ASM.ToWord8s (TestOpcode (ASM.Reference Word.Word32)) where
       delta   <- refCurrentVA `ASM.safeMinus` refTargetVA
       deltaW8 <- ASM.safeDowncast (fromIntegral delta)
       pure $ Seq.fromList [0x02, deltaW8]
+  toWord8s (Literal word8) =
+      pure $ Seq.fromList [0x03, word8]
   toWord8s x = Left
     $ ASM.ReferenceTypeNotSupportedInOpcode $
       "Invalid combination of opcodes and references: " <> Text.pack (show x)
@@ -57,6 +61,9 @@ testSeq1 = Seq.fromList [ASM.AOp (JumpTo (ASM.RefVA "test"))]
 testSeq2 :: Seq.Seq (ASM.Atom (TestOpcode (ASM.Reference ASM.LabelText)))
 testSeq2 = Seq.fromList [ASM.ALabel "TEST"]
 
+testSeq3 :: Seq.Seq (ASM.Atom (TestOpcode (ASM.Reference ASM.LabelText)))
+testSeq3 = Seq.fromList [ASM.AOp (Literal 0x10)]
+
 defaultConfig :: ASM.Config Word.Word32
 defaultConfig = ASM.Config {..}
   where
@@ -67,4 +74,4 @@ main = hspec $ do
   it "Empty list assembly returns an empty BS" $
     ASM.assemble defaultConfig testSeq0 `shouldBe` Right ""
   it "Blabla" $
-    ASM.assemble defaultConfig testSeq2 `shouldBe` Right "TEST"
+    ASM.assemble defaultConfig testSeq3 `shouldBe` Right "\x03\x10"
