@@ -23,7 +23,7 @@ import qualified Data.Foldable as F
 --  1. collect a Map from label to location information, (scanLabels)
 --  2. replace labels with the required references by using the map from (1) (solveReferences)
 --
--- The module is polymorphic on a data type tipically denotated with 'op', which implements
+-- The module is polymorphic on a data type typically denotated with 'op', which implements
 -- type classes 'ToWord8s' and 'ByteSized'. Values of this datatype in a sequence are elements that
 -- can be converted to a binary format. The module facilitates outputting several types of
 -- references to other 'op' elements in the sequence by means of the 'Reference' type.

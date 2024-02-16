@@ -22,17 +22,17 @@ instance Exception.Exception AssemblyError
 
 newtype SomeExceptionWrap = SEW Exception.SomeException deriving (Show)
 
+-- Defining a manual instance because SomeException doesn't make it possible to derive
 instance Eq SomeExceptionWrap where
   (SEW se1) == (SEW se2) = show se1 == show se2
 
--- Defining a manual instance because SomeException doesn't make it possible to derive
-
 type LabelText = Text.Text
 
+-- TODO: consider Foreign.Storable, add the 'alignment' method
 class ByteSized a where
   sizeof :: a -> Int.Int64
 
--- | Because the Binary class doesn't easily allow nice error handling
+-- | Because the Binary class doesn't easily allow nice error handling.
 class ToWord8s a where
   toWord8s :: a -> Either AssemblyError (Seq.Seq Word8)
 
