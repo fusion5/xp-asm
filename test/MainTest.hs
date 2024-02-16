@@ -56,13 +56,13 @@ testSeq0 :: Seq.Seq (ASM.Atom (TestOpcode (ASM.Reference ASM.LabelText)))
 testSeq0 = Seq.fromList []
 
 testSeq1 :: Seq.Seq (ASM.Atom (TestOpcode (ASM.Reference ASM.LabelText)))
-testSeq1 = Seq.fromList [ASM.AOp (JumpTo (ASM.RefVA "test"))]
+testSeq1 = Seq.fromList [ASM.Atom (JumpTo (ASM.RefVA "test"))]
 
 testSeq2 :: Seq.Seq (ASM.Atom (TestOpcode (ASM.Reference ASM.LabelText)))
-testSeq2 = Seq.fromList [ASM.ALabel "TEST"]
+testSeq2 = Seq.fromList [ASM.Label "TEST"]
 
 testSeq3 :: Seq.Seq (ASM.Atom (TestOpcode (ASM.Reference ASM.LabelText)))
-testSeq3 = Seq.fromList [ASM.AOp (Literal 0x10)]
+testSeq3 = Seq.fromList [ASM.Atom (Literal 0x10)]
 
 defaultConfig :: ASM.Config Word.Word32
 defaultConfig = ASM.Config {..}

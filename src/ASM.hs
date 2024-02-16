@@ -75,14 +75,14 @@ scanAtom
   -> Either AssemblyError (StateLabelScan address)
 scanAtom s@StateLabelScan {..} = go
   where
-    go (AOp op) = do
+    go (Atom op) = do
         newIA  <- operationWidth op `safePlus` aslsIAOffset
         newRVA <- operationWidth op `safePlus` aslsRelativeVAOffset
         pure s {
           aslsIAOffset  = newIA
         , aslsRelativeVAOffset = newRVA
         }
-    go (ALabel labelText) =
+    go (Label labelText) =
       let
         aiIA  = aslsIAOffset
         aiRelativeVA = aslsRelativeVAOffset
@@ -116,15 +116,15 @@ solveAtomReference
   -> Either AssemblyError (StateReferenceSolve op address)
 solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go
   where
-    go (AOp op1) = do
+    go (Atom op1) = do
       let width = operationWidth op1
-      op2 <- AOp <$> Prelude.mapM (solveReference asrsRelativeVAOffset) op1
+      op2 <- Atom <$> Prelude.mapM (solveReference asrsRelativeVAOffset) op1
       newRVA <- width `safePlus` asrsRelativeVAOffset
       pure s {
         asrsAtoms = asrsAtoms Seq.|> op2
       , asrsRelativeVAOffset = newRVA
       }
-    go (ALabel _) = pure s -- self-solve labels? no need, discard them...
+    go (Label _) = pure s -- self-solve labels? no need, discard them...
 
     query labelText
       = Either.maybeToEither

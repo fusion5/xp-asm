@@ -83,15 +83,15 @@ data Reference address
   deriving (Show)
 
 -- | The operation type is a subset of the instruction set, e.g. for x86 jmp, mov, etc.
--- It is polymorphic in the representation of address references.
+-- It can be, but not necessarily, polymorphic in the representation of address references.
 data Atom operation
-  = AOp operation
-  | ALabel LabelText
+  = Atom operation
+  | Label LabelText
   deriving (Show, Eq, Generic)
 
 instance ToWord8s operation => ToWord8s (Atom operation) where
-  toWord8s (AOp op)   = toWord8s op
-  toWord8s (ALabel _) = pure mempty
+  toWord8s (Atom op) = toWord8s op
+  toWord8s (Label _) = pure mempty
 
 -- | Constant parameters for the assembler.
 data Config address
