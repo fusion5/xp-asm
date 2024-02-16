@@ -2,6 +2,8 @@ default-extensions:
   - StrictData
   - RecordWildCards
   - OverloadedStrings
+  - DataKinds
+  - ScopedTypeVariables
 
 dependencies:
   - base
@@ -14,10 +16,12 @@ dependencies:
   - transformers
   - extra
   - transformers
+  - type-natural
 
 ghc-options:
   - -Wall
   - -Werror
+  - -Wno-orphans
 
 library:
   source-dirs: 
