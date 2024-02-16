@@ -2,7 +2,6 @@ module Common
   ( module Control.Monad
   , module Control.Monad.Trans.Class
   , module Control.Monad.Trans.Except
-  , module Data.Sized
   , module Data.Type.Natural
   , module Data.Kind
   , module Data.Word
@@ -13,7 +12,6 @@ module Common
 import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Except
-import Data.Sized
 import Data.Type.Natural
 import Data.Kind
 import Data.Word

@@ -6,11 +6,9 @@ import Common
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
-import qualified Data.ByteString.Lazy as BS
 import qualified Data.Int as Int
 import qualified Control.Exception as Exception
--- import qualified Data.Binary as Bin
-import qualified Data.Binary.Put as Bin
+import qualified Data.Vector as Vector
 
 data AssemblyError
   = Arithmetic SomeExceptionWrap
@@ -37,7 +35,7 @@ class Sized a where
 -- | The Binary class doesn't allow for nice error handling, therefore we use ExceptT
 -- different one.
 class ToBS a where
-  asmToBin :: a -> ExceptT AssemblyError Bin.PutM ()
+  asmToBin :: a -> Either AssemblyError (Vector.Vector Word8)
 
 data AddressInfo address
   = AddressInfo
@@ -96,13 +94,11 @@ data SolvedReference address
 data Atom operation
   = AOp operation
   | ALabel LabelText
-  | AData BS.ByteString
   deriving (Show, Eq, Generic)
 
 instance ToBS operation => ToBS (Atom operation) where
   asmToBin (AOp op)   = asmToBin op
   asmToBin (ALabel _) = pure mempty
-  asmToBin (AData bs) = lift $ Bin.putLazyByteString bs
 
 -- | Constant parameters for the assembler.
 data Config address

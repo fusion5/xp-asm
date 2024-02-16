@@ -11,12 +11,13 @@ import Common
 import qualified ASM
 import qualified ASM.Types as ASM
 
--- import qualified Data.Int as Int
 import qualified Data.Sequence as Seq
-import qualified Data.Binary as Bin
+-- import qualified Data.Binary as Bin
 import qualified Data.Binary.Put as Bin
 import qualified Data.Word as Word
 import qualified Data.Text as Text
+import qualified Data.Vector as Vector
+import qualified Data.ByteString.Lazy as BS
 
 -- Example opcodes we pass to the assembler:
 -- input:
@@ -43,29 +44,21 @@ instance ASM.Sized (TestOpcode a) where
 instance ASM.ToBS (TestOpcode (ASM.SolvedReference Word.Word32)) where
   asmToBin (JumpTo (ASM.SolvedRefVA i32))
     = do
-        lift $ Bin.putWord8 0x01
-        lift $ Bin.putWord32le (fromIntegral i32)
+      pure $ Vector.fromList $ 0x01 : BS.unpack (Bin.runPut (Bin.putWord32le (fromIntegral i32)))
   asmToBin (JumpRelative (ASM.SolvedRefForwardOffsetVA {..}))
     = do
-      delta   <- except $ sfoCurrentVA `ASM.safeMinus` sfoTargetVA
-      deltaW8 <- except $ ASM.safeDowncast (fromIntegral delta)
-      lift $ Bin.putWord8 0x02
-      lift $ Bin.putWord8 deltaW8
-  asmToBin x = throwE
+      delta   <- sfoCurrentVA `ASM.safeMinus` sfoTargetVA
+      deltaW8 <- ASM.safeDowncast (fromIntegral delta)
+      pure $ Vector.fromList [0x02, deltaW8]
+  asmToBin x = Left
     $ ASM.ReferenceTypeNotSupportedInOpcode $
       "Invalid combination of opcodes and references: " <> Text.pack (show x)
-
--- emptySeqIn :: Seq.Seq (Atom (TestOpcode LabelText))
--- emptySeqIn = Seq.fromList []
-
--- emptySeqOut :: Seq.Seq (Atom (TestOpcode Int.Int64))
--- emptySeqOut = Seq.fromList []
 
 testSeq1 :: Seq.Seq (ASM.Atom (TestOpcode ASM.Reference))
 testSeq1 = Seq.fromList [ASM.AOp (JumpTo (ASM.RefVA "test"))]
 
 testSeq2 :: Seq.Seq (ASM.Atom (TestOpcode ASM.Reference))
-testSeq2 = Seq.fromList [ASM.AData "TEST"]
+testSeq2 = Seq.fromList [ASM.ALabel "TEST"]
 
 defaultConfig :: ASM.Config Word.Word32
 defaultConfig = ASM.Config {..}

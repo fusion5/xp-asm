@@ -18,8 +18,8 @@ import qualified Data.Map as Map
 import qualified Numeric.Decimal.BoundedArithmetic as B
 import qualified Data.Either.Extra as Either
 import qualified Control.Exception as Exception
--- import qualified Data.Foldable as F
-import qualified Data.Binary.Put as Bin
+import qualified Data.Foldable as F
+import qualified Data.Vector as Vector
 
 -- | A simple assembler that produces one object, without imported/exported references.
 -- There are two passes:
@@ -89,15 +89,6 @@ scanAtom s@StateLabelScan {..} = go
       in pure s {
         aslsLabels = Map.insert labelText (AddressInfo {..}) aslsLabels
       }
-    go (AData bytes)
-      = do
-        let len = fromIntegral (BS.length bytes)
-        newIA  <- len `safePlus` aslsIAOffset
-        newRVA <- len `safePlus` aslsRelativeVAOffset
-        pure s {
-          aslsIAOffset         = newIA
-        , aslsRelativeVAOffset = newRVA
-        }
 
 -- Solve label references to dictionary addresses. Again we keep track of the offset we are at
 -- like in scanLabels. Perhaps this duplicate operation could be factored out, but it shouldn't
@@ -127,18 +118,14 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go -
   where
     go (AOp op1) = do
       let width = operationWidth op1
-      op2 <- AOp <$> mapM (solveReference asrsRelativeVAOffset) op1
+      op2 <- AOp <$> Prelude.mapM (solveReference asrsRelativeVAOffset) op1
       newRVA <- width `safePlus` asrsRelativeVAOffset
       pure s {
         asrsAtoms = asrsAtoms Seq.|> op2
       , asrsRelativeVAOffset = newRVA
       }
     go (ALabel _) = pure s -- self-solve labels? no need, discard them...
-    go (AData bytes) = do
-      newRVA <- fromIntegral (BS.length bytes) `safePlus` asrsRelativeVAOffset
-      pure s {
-        asrsRelativeVAOffset = newRVA
-      }
+
     -- minus = boundedMapEx ReferenceArithmetic B.minusBounded
     query labelText
       = Either.maybeToEither
@@ -178,16 +165,6 @@ assemble
 assemble cfg input = do
   labelMap <- scanLabels input
   solvedReferences <- solveReferences cfg labelMap input
-  let f = mapM_ asmToBin solvedReferences
-  let k = runExceptT f
-  let (eith, result) = Bin.runPutM k
-  Either.mapRight (const result) eith
-  {-
-  q <- runExceptT $ F.fold <$> mapM
-    ( {- Either.mapRight Bin.runPut
-    . Either.mapLeft OpcodeToByteString
-    runExceptT
-    -}
-    asmToBin
-    ) solvedReferences
-  -}
+  vectors <- Prelude.mapM asmToBin solvedReferences
+  let concatVectors = F.foldl' (<>) Vector.empty vectors
+  pure $ BS.pack $ Vector.toList concatVectors

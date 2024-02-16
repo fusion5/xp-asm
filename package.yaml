@@ -17,6 +17,7 @@ dependencies:
   - extra
   - transformers
   - type-natural
+  - vector
 
 ghc-options:
   - -Wall
