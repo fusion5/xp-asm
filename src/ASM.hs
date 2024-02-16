@@ -91,7 +91,7 @@ scanAtom s@StateLabelScan {..} = go
 -- like in scanLabels. Perhaps this duplicate operation could be factored out, but it shouldn't
 -- be too expensive...
 solveReferences
-  :: (Traversable op, Bounded address, Ord address, Num address, ByteSized (op (Reference LabelText)))
+  :: (Traversable op, Address address, ByteSized (op (Reference LabelText)))
   => Config address
   -> Map.Map LabelText (AddressInfo address)
   -> Seq.Seq (Atom (op (Reference LabelText)))
@@ -105,7 +105,7 @@ solveReferences c labelDictionary s
       }
 
 solveAtomReference
-  :: (Traversable op, Num address, Ord address, Bounded address, ByteSized (op (Reference LabelText)))
+  :: (Traversable op, Address address, ByteSized (op (Reference LabelText)))
   => Config address
   -> Map.Map LabelText (AddressInfo address)
   -> StateReferenceSolve op address
@@ -151,9 +151,7 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go -
 
 assemble
   ::
-  ( Num address
-  , Ord address
-  , Bounded address
+  ( Address address
   , Traversable op
   , ByteSized (op (Reference LabelText))
   , ToWord8s (op (Reference address))

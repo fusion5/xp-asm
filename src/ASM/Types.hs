@@ -40,6 +40,8 @@ class ToWord8s a where
 instance ToWord8s a => ToWord8s (Seq.Seq a) where
   toWord8s as = join <$> mapM toWord8s as
 
+class (Num a, Ord a, Bounded a) => Address a where
+
 data AddressInfo address
   = AddressInfo
   { -- TODO: document

@@ -33,6 +33,8 @@ instance ASM.ByteSized (TestOpcode a) where
   sizeof (JumpTo _)       = 1 + 4
   sizeof (JumpRelative _) = 1 + 1
 
+instance ASM.Address Word32
+
 instance ASM.ToWord8s (TestOpcode (ASM.Reference Word.Word32)) where
   toWord8s (JumpTo (ASM.RefVA i32))
     = do
