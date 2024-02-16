@@ -4,6 +4,7 @@ default-extensions:
   - OverloadedStrings
   - DataKinds
   - ScopedTypeVariables
+  - KindSignatures
 
 dependencies:
   - base

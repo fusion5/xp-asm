@@ -1,4 +1,4 @@
 loops:
   tests:
     description: Run the unit tests
-    command: hpack && cabal test --test-show-details=streaming
+    command: gen-hie > hie.yaml && hpack && cabal test --test-show-details=streaming

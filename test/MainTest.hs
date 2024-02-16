@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GADTs #-}
 
 module MainTest where
 
@@ -68,6 +69,14 @@ defaultConfig :: ASM.Config Word.Word32
 defaultConfig = ASM.Config {..}
   where
     acVirtualBaseAddress = 0
+
+
+data Test2 (address :: Type) (n :: Nat) where
+  JumpTo2 :: address -> Test2 address 5
+  JumpRelative2 :: address -> Test2 address 2
+  Literal2 :: address -> Test2 address 2
+
+
 
 main :: IO ()
 main = hspec $ do
