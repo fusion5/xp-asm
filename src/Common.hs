@@ -1,11 +1,21 @@
 module Common
-  ( module GHC.Generics
+  ( module Control.Monad
   , module Control.Monad.Trans.Class
   , module Control.Monad.Trans.Except
-  , module Control.Monad
+  , module Data.Sized
+  , module Data.Type.Natural
+  , module Data.Kind
+  , module Data.Word
+  , module GHC.Generics
+  , module Numeric.Natural
   ) where
 
-import GHC.Generics
+import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Except
-import Control.Monad
+import Data.Sized
+import Data.Type.Natural
+import Data.Kind
+import Data.Word
+import GHC.Generics hiding (S)
+import Numeric.Natural
