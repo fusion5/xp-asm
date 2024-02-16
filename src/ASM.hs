@@ -22,6 +22,11 @@ import qualified Data.Foldable as F
 -- There are two passes:
 --  1. collect a Map from label to location information, (scanLabels)
 --  2. replace labels with the required references by using the map from (1) (solveReferences)
+--
+-- The module is polymorphic on a data type tipically denotated with 'op', which implements
+-- type classes 'ToWord8s' and 'ByteSized'. Values of this datatype in a sequence are elements that
+-- can be converted to a binary format. The module facilitates outputting several types of
+-- references to other 'op' elements in the sequence by means of the 'Reference' type.
 
 boundedBinopMapEx
   :: (Address a)
@@ -109,7 +114,7 @@ solveAtomReference
   -> StateReferenceSolve op address
   -> Atom (op (Reference LabelText))
   -> Either AssemblyError (StateReferenceSolve op address)
-solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go -- (AOp op1)
+solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go
   where
     go (AOp op1) = do
       let width = operationWidth op1

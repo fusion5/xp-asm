@@ -32,8 +32,7 @@ type LabelText = Text.Text
 class ByteSized a where
   sizeof :: a -> Int.Int64
 
--- | The Binary class doesn't allow for nice error handling, therefore we use ExceptT
--- different one.
+-- | Because the Binary class doesn't easily allow nice error handling
 class ToWord8s a where
   toWord8s :: a -> Either AssemblyError (Seq.Seq Word8)
 
