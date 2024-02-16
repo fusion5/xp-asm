@@ -6,8 +6,9 @@ import Common
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
-import qualified Data.Int as Int
+-- import qualified Data.Int as Int
 import qualified Control.Exception as Exception
+import qualified Data.Vector.Sized as Vec
 
 data AssemblyError
   = Arithmetic SomeExceptionWrap
@@ -30,14 +31,15 @@ type LabelText = Text.Text
 
 -- TODO: consider Foreign.Storable, add the 'alignment' method
 class ByteSized a where
-  sizeof :: a -> Int.Int64
+  sizeof :: a -> Natural
 
--- | Because the Binary class doesn't easily allow nice error handling.
 class ToWord8s a where
   toWord8s :: a -> Either AssemblyError (Seq.Seq Word8)
+  safe :: forall n . a -> Vec.Vector n Word8
 
 instance ToWord8s a => ToWord8s (Seq.Seq a) where
   toWord8s as = join <$> mapM toWord8s as
+  safe _as = undefined
 
 class (Num a, Ord a, Bounded a) => Address a where
 
@@ -92,6 +94,16 @@ data Atom operation
 instance ToWord8s operation => ToWord8s (Atom operation) where
   toWord8s (Atom op) = toWord8s op
   toWord8s (Label _) = pure mempty
+  safe (Atom _op) = undefined -- safe op
+  safe (Label _) = undefined -- Vec.empty --
+  {- Produces:
+      Expected: Vec.Vector n Word8
+        Actual: Vec.Vector 0 Word8
+      ‘n’ is a rigid type variable bound by
+        the type signature for:
+          safe :: forall (n :: Nat). Atom operation -> Vec.Vector n Word8
+          -}
+
 
 -- | Constant parameters for the assembler.
 data Config address

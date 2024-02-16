@@ -19,6 +19,7 @@ dependencies:
   - transformers
   - type-natural
   - vector
+  - vector-sized
 
 ghc-options:
   - -Wall
