@@ -24,7 +24,7 @@ import qualified Data.Foldable as F
 --  2. replace labels with the required references by using the map from (1) (solveReferences)
 
 boundedBinopMapEx
-  :: (Ord a, Num a, Bounded a)
+  :: (Address a)
   => (Exception.SomeException -> AssemblyError)
   -> (a -> a -> Either Exception.SomeException a)
   -> a
@@ -36,11 +36,9 @@ boundedBinopMapEx ex op o1 o2
 -- | Extract all labels in the sequence in a Map
 scanLabels
   ::
-  ( Num address
+  ( Address address
   , Functor op
   , ByteSized (op (Reference LabelText))
-  , Ord address
-  , Bounded address
   )
   => Seq.Seq (Atom (op (Reference LabelText)))
   -> Either AssemblyError (Map.Map LabelText (AddressInfo address))
@@ -52,10 +50,10 @@ scanLabels s = aslsLabels <$> foldM scanAtom initialState s
       , aslsLabels = Map.empty
       }
 
-safePlus :: (Ord a, Num a, Bounded a) => a -> a -> Either AssemblyError a
+safePlus :: (Address a) => a -> a -> Either AssemblyError a
 safePlus = boundedBinopMapEx (Arithmetic . SEW) B.plusBounded
 
-safeMinus :: (Ord a, Num a, Bounded a) => a -> a -> Either AssemblyError a
+safeMinus :: (Address a) => a -> a -> Either AssemblyError a
 safeMinus = boundedBinopMapEx (Arithmetic . SEW) B.plusBounded
 
 safeDowncast :: (Integral a, Bounded a) => Integer -> Either AssemblyError a
@@ -66,7 +64,7 @@ operationWidth :: (Num address, ByteSized op) => op -> address
 operationWidth = fromIntegral . sizeof
 
 scanAtom
-  :: (ByteSized ops, Num address, Ord address, Bounded address)
+  :: (ByteSized ops, Address address)
   => StateLabelScan address
   -> Atom ops
   -> Either AssemblyError (StateLabelScan address)
@@ -123,14 +121,11 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go -
       }
     go (ALabel _) = pure s -- self-solve labels? no need, discard them...
 
-    -- minus = boundedMapEx ReferenceArithmetic B.minusBounded
     query labelText
       = Either.maybeToEither
           (ReferenceMissing labelText)
           (Map.lookup labelText labelDictionary)
 
-    -- solveReference
-    --  :: add -> Reference LabelText -> Either AssemblyError (Reference add)
     solveReference _ (RefVA labelText) = do
       rva <- aiRelativeVA <$> query labelText
       RefVA <$> rva `safePlus` acVirtualBaseAddress
