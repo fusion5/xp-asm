@@ -1,7 +1,6 @@
-{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeApplications #-}
 
 module MainTest where
@@ -42,7 +41,6 @@ data Test2 (address :: Type) (n :: Nat) where
   JumpTo2 :: address -> Test2 address 5
   JumpRelative2 :: address -> Test2 address 2
   Literal2 :: Word8 -> Test2 address 2
-  deriving (Functor)
 
 instance Show (Test2 a n) where
   show _ = "Test2 {contents not shown}"

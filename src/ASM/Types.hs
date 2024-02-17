@@ -1,12 +1,7 @@
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-
-{-- LANGUAGE TypeSynonymInstances #-}
-{-- LANGUAGE FlexibleInstances #-}
-{-- LANGUAGE UndecidableInstances #-}
 
 module ASM.Types where
 
@@ -14,8 +9,6 @@ import Common
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
--- import qualified Data.Sequence as Seq
--- import qualified Data.Int as Int
 import qualified Control.Exception as Exception
 import qualified Data.Vector.Sized as Vec
 
@@ -60,12 +53,9 @@ class ByteSized a where
   sizeof :: a -> Natural
 
 class ToWord8s (opcode :: Nat -> Type) where
-  -- TODO: Add Either
   safe :: forall n . opcode n -> Either AssemblyError (Vec.Vector n Word8)
 
 data Container (operation :: Nat -> Type) (n :: Nat) where
-    -- One :: a n -> Container a n
-    -- Two :: a n1 -> a n2 -> Container a (n1 + n2)
     Nil  :: Container a 0
     Cons :: (KnownNat n1, KnownNat n2, n ~ n1 + n2)
          => operation n1
@@ -158,24 +148,6 @@ mapMNats2
   -> Either AssemblyError (container b n)
 mapMNats2 (MapMFunction2 f) = sequenceANats2 . fmapSized2 f
 
-{-
-data Const x (n :: Nat) = Const { unConst :: x }
-
-mapMNats'
-  :: forall
-     (n :: Nat)
-     (container :: (Nat -> Type) -> Nat -> Type)
-     (a :: Type)
-     (b :: Type)
-  .  (FunctorSized container, KnownNat n)
-  => (a -> Either AssemblyError b)
-  -> container (Const a) n
-  -> EitherSized (container (Const b)) n
-mapMNats' _f = undefined
-  where
-    _liftF (Const c) f = Const <$> f c
--}
-
 eitherToEithersized
   :: forall (a :: Nat -> Type) (n :: Nat)
   .  Either AssemblyError (a n)
@@ -187,11 +159,6 @@ eithersizedToEither
   .  EitherSized a n
   -> Either AssemblyError (a n)
 eithersizedToEither (EitherSized e) = e
-
-{- do
-  x :: b n <- f object
-  pure undefined
-  -}
 
 instance ToWord8s opcode => ToWord8s (Container opcode) where
   safe Nil = pure Vec.empty
@@ -248,7 +215,7 @@ data Atom (operation :: Nat -> Type) (n :: Nat) where
 
 instance ToWord8s operation => ToWord8s (Atom operation) where
   safe (Atom op) = safe op
-  safe (Label _) = pure $ Vec.empty
+  safe (Label _) = pure Vec.empty
 
 -- | Constant parameters for the assembler.
 data Config address
