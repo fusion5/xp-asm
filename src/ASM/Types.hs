@@ -3,7 +3,26 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
-module ASM.Types where
+module ASM.Types (
+    StateLabelScan (..)
+  , StateReferenceSolve (..)
+  , Config (..)
+  , AddressInfo (..)
+  , AssemblyError (..)
+  , Address
+  , MapMFunction (..)
+  , foldMNats
+  , mapMNats
+  , FoldCallback (..)
+  , ByteSized (..)
+  , Reference (..)
+  , Atom (..)
+  , LabelText
+  , Container (..)
+  , ToWord8s (..)
+  , FunctorSized (..)
+  , SomeExceptionWrap (..)
+) where
 
 import Common
 
@@ -48,7 +67,8 @@ data Container (operation :: Nat -> Type) (n :: Nat) where
 -- Needed because we need the forall qualifiers on the counts. Is there a simpler way?
 newtype FoldCallback m state operation =
   FoldCallback
-    (  forall n1 n2 . (KnownNat n1, KnownNat n2)
+    (  forall n1 n2
+    .  (KnownNat n1, KnownNat n2)
     => (state n1 -> operation n2 -> m (state (n2 + n1)))
     )
 
@@ -64,84 +84,35 @@ foldMNats (FoldCallback f) e (Cons op container) = do
   f x op
 
 -- Because we cannot derive Functor for our opcode GADT
--- A functor for sized containers over a sized component
-class FunctorSized (c :: (Nat -> Type) -> Nat -> Type) where
-  fmapSized :: forall (a :: Nat -> Type) (b :: Nat -> Type) (n :: Nat)
-            .  (a n -> b n) -> c a n -> c b n
-
 -- A functor for sized containers over an unsized component
-class FunctorSized2 (c :: Type -> Nat -> Type) where
+class FunctorSized (c :: Type -> Nat -> Type) where
   fmapSized2 :: forall (a :: Type) (b :: Type) (n :: Nat)
              .  (a -> b) -> c a n -> c b n
 
--- Corresponds to a -> m b
 newtype MapMFunction a b =
-  MapMFunction (forall (n :: Nat) . KnownNat n => a n -> Either AssemblyError (b n))
-
-newtype MapMFunction2 a b =
-  MapMFunction2 (a -> Either AssemblyError b)
-
--- The problem is we cannot sequenceM the eithers without losing the size information.
--- This should fix that.
-newtype EitherSized (c :: Nat -> Type) (n :: Nat) =
-  EitherSized (Either AssemblyError (c n))
-
--- sequenceA :: Applicative f => t (f a) -> f (t a)
-sequenceANats
-  :: forall
-     (n :: Nat)
-     (container :: (Nat -> Type) -> Nat -> Type)
-     (a :: Nat -> Type)
-  .  (FunctorSized container, KnownNat n)
-  => container (EitherSized a) n
-  -> EitherSized (container a) n
-sequenceANats = mapMNats (MapMFunction eithersizedToEither) -- . eitherToEithersized
+  MapMFunction (a -> Either AssemblyError b)
 
 sequenceANats2
   :: forall
      (n :: Nat)
      (container :: Type -> Nat -> Type)
      (a :: Type)
-  .  (FunctorSized2 container, KnownNat n)
+  .  (FunctorSized container, KnownNat n)
   => container (Either AssemblyError a) n
   -> Either AssemblyError (container a n)
-sequenceANats2 = mapMNats2 (MapMFunction2 id) -- . eitherToEithersized
+sequenceANats2 = mapMNats (MapMFunction id) -- . eitherToEithersized
 
 mapMNats
-  :: forall
-     (n :: Nat)
-     (container :: (Nat -> Type) -> Nat -> Type)
-     (a :: Nat -> Type)
-     (b :: Nat -> Type)
-  .  (FunctorSized container, KnownNat n)
-  => MapMFunction a b
-  -> container a n
-  -> EitherSized (container b) n
-mapMNats (MapMFunction f) = sequenceANats . fmapSized (eitherToEithersized . f)
-
-mapMNats2
   :: forall
     (n :: Nat)
     (container :: Type -> Nat -> Type)
     (a :: Type)
     (b :: Type)
-  . (FunctorSized2 container, KnownNat n)
-  => MapMFunction2 a b
+  . (FunctorSized container, KnownNat n)
+  => MapMFunction a b
   -> container a n
   -> Either AssemblyError (container b n)
-mapMNats2 (MapMFunction2 f) = sequenceANats2 . fmapSized2 f
-
-eitherToEithersized
-  :: forall (a :: Nat -> Type) (n :: Nat)
-  .  Either AssemblyError (a n)
-  -> EitherSized a n
-eitherToEithersized = EitherSized
-
-eithersizedToEither
-  :: forall (a :: Nat -> Type) (n :: Nat)
-  .  EitherSized a n
-  -> Either AssemblyError (a n)
-eithersizedToEither (EitherSized e) = e
+mapMNats (MapMFunction f) = sequenceANats2 . fmapSized2 f
 
 instance ToWord8s opcode => ToWord8s (Container opcode) where
   safe Nil = pure Vec.empty
