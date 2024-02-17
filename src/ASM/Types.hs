@@ -31,26 +31,9 @@ instance Eq SomeExceptionWrap where
 
 type LabelText = Text.Text
 
--- Make LabelText into a fake reference for completeness...
-instance Real LabelText where toRational _ = 0
-instance Enum LabelText where
-  toEnum _ = ""
-  fromEnum _ = 0
-instance Num LabelText where
-  (+) = undefined
-  (*) = undefined
-  abs = undefined
-  signum = undefined
-  fromInteger = undefined
-  negate = undefined
-instance Bounded LabelText where
-  minBound = 0
-  maxBound = 0
-instance Address LabelText
-
 -- TODO: consider Foreign.Storable, add the 'alignment' method
-class ByteSized a where
-  sizeof :: a -> Natural
+class ByteSized (a :: Nat -> Type) where
+  sizeof :: (KnownNat n) => a n -> Natural
 
 class ToWord8s (opcode :: Nat -> Type) where
   safe :: forall n . opcode n -> Either AssemblyError (Vec.Vector n Word8)

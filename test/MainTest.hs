@@ -45,32 +45,21 @@ data Opcode (address :: Type) (n :: Nat) where
 instance Show (Opcode a n) where
   show _ = "Opcode {contents not shown}"
 
-instance (KnownNat n) => ASM.ByteSized (Opcode a n) where
-  sizeof _ = natVal (P.Proxy @n)
+instance ASM.ByteSized (Opcode a) where
+  sizeof (_ :: KnownNat n => Opcode a n) = natVal (P.Proxy @n)
 
 errorText :: Text.Text -> a
 errorText = error . Text.unpack
 
 -- Could be in another module, is it possible to do this more efficient?
 
-class (Integral a, ASM.Address a) => Reference32 a where
-  word32le :: a -> (Word8, Word8, Word8, Word8)
+word32le :: Word32 -> (Word8, Word8, Word8, Word8)
+word32le w32
+  = case BS.unpack (Bin.runPut (Bin.putWord32le w32)) of
+    [w0, w1, w2, w3] -> (w0, w1, w2, w3)
+    _                -> error "internal error"
 
-instance Reference32 Word.Word32 where
-  word32le w32
-    = case BS.unpack (Bin.runPut (Bin.putWord32le w32)) of
-      [w0, w1, w2, w3] -> (w0, w1, w2, w3)
-      _                -> error "internal error"
-
--- We make labels to be fake references for completeness sake
-instance Reference32 ASM.LabelText where
-  word32le _ = word32le (0 :: Word32)
-
-instance Integral ASM.LabelText where
-  quotRem = undefined
-  toInteger = undefined
-
-instance (Reference32 ref) => ASM.ToWord8s (Opcode (ASM.Reference ref)) where
+instance ASM.ToWord8s (Opcode (ASM.Reference Word.Word32)) where
   safe (JumpTo2 (ASM.RefVA i32)) = do
     pure $ 0x01 `Vec.cons` Vec.fromTuple (word32le i32)
   safe (JumpRelative2 (ASM.RefForwardOffsetVASolved {..})) = do
