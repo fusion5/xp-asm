@@ -73,7 +73,7 @@ instance ASM.ToWord8s (Opcode (ASM.Reference Word.Word32)) where
 
 -- Provide code for mapping addresses/references?
 instance ASM.FunctorSized Opcode where
-  fmapSized2 f = go
+  fmapSized f = go
     where
       go (JumpTo ref) = JumpTo (f ref)
       go (JumpRelative ref) = JumpRelative (f ref)

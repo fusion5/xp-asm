@@ -86,13 +86,13 @@ foldMNats (FoldCallback f) e (Cons op container) = do
 -- Because we cannot derive Functor for our opcode GADT
 -- A functor for sized containers over an unsized component
 class FunctorSized (c :: Type -> Nat -> Type) where
-  fmapSized2 :: forall (a :: Type) (b :: Type) (n :: Nat)
+  fmapSized :: forall (a :: Type) (b :: Type) (n :: Nat)
              .  (a -> b) -> c a n -> c b n
 
 newtype MapMFunction a b =
   MapMFunction (a -> Either AssemblyError b)
 
-sequenceANats2
+sequenceANats
   :: forall
      (n :: Nat)
      (container :: Type -> Nat -> Type)
@@ -100,7 +100,7 @@ sequenceANats2
   .  (FunctorSized container, KnownNat n)
   => container (Either AssemblyError a) n
   -> Either AssemblyError (container a n)
-sequenceANats2 = mapMNats (MapMFunction id) -- . eitherToEithersized
+sequenceANats = mapMNats (MapMFunction id) -- . eitherToEithersized
 
 mapMNats
   :: forall
@@ -112,7 +112,7 @@ mapMNats
   => MapMFunction a b
   -> container a n
   -> Either AssemblyError (container b n)
-mapMNats (MapMFunction f) = sequenceANats2 . fmapSized2 f
+mapMNats (MapMFunction f) = sequenceANats . fmapSized f
 
 instance ToWord8s opcode => ToWord8s (Container opcode) where
   safe Nil = pure Vec.empty
