@@ -11,7 +11,7 @@ module ASM.Types (
   , AssemblyError (..)
   , Address
   , MapMFunction (..)
-  , foldMNats
+  , foldMContainer
   , mapMNats
   , FoldCallback (..)
   , ByteSized (..)
@@ -72,15 +72,15 @@ newtype FoldCallback m state operation =
     => (state n1 -> operation n2 -> m (state (n2 + n1)))
     )
 
-foldMNats
+foldMContainer
   :: (Monad m)
   => FoldCallback m state operation
   -> state 0
   -> Container operation n
   -> m (state n)
-foldMNats _            e Nil = pure e
-foldMNats (FoldCallback f) e (Cons op container) = do
-  x <- foldMNats (FoldCallback f) e container
+foldMContainer _ e Nil = pure e
+foldMContainer (FoldCallback f) e (Cons op container) = do
+  x <- foldMContainer (FoldCallback f) e container
   f x op
 
 -- Because we cannot derive Functor for our opcode GADT

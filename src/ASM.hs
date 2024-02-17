@@ -50,7 +50,7 @@ scanLabels
   => Container (Atom (op (Reference LabelText))) n
   -> Either AssemblyError (Map.Map LabelText (AddressInfo address))
 scanLabels s
-    = aslsLabels <$> foldMNats (FoldCallback scanAtom) initialState s
+    = aslsLabels <$> foldMContainer (FoldCallback scanAtom) initialState s
   where
     -- initialState :: Address address => StateLabelScan address 0
     initialState = StateLabelScan
@@ -117,7 +117,7 @@ solveReferences
   -> Container (Atom (op (Reference LabelText))) n
   -> Either AssemblyError (Container (Atom (op (Reference address))) n)
 solveReferences c labelDictionary s
-    = asrsAtoms <$> foldMNats (FoldCallback $ solveAtomReference c labelDictionary) initialState s
+    = asrsAtoms <$> foldMContainer (FoldCallback $ solveAtomReference c labelDictionary) initialState s
   where
     initialState = StateReferenceSolve
       { asrsAtoms = Nil

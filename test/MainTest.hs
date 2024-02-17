@@ -38,9 +38,9 @@ defaultConfig = ASM.Config {..}
     acVirtualBaseAddress = 0
 
 data Opcode (address :: Type) (n :: Nat) where
-  JumpTo :: address -> Opcode address 5
+  JumpTo       :: address -> Opcode address 5
   JumpRelative :: address -> Opcode address 2
-  Literal :: Word8 -> Opcode address 2
+  Literal      :: Word8   -> Opcode address 2
 
 instance Show (Opcode a n) where
   show _ = "Opcode {contents not shown}"
