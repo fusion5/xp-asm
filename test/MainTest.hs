@@ -13,7 +13,6 @@ import Common
 import qualified ASM
 import qualified ASM.Types as ASM
 
-import qualified Data.Sequence as Seq
 import qualified Data.Binary.Put as Bin
 import qualified Data.Word as Word
 import qualified Data.Text as Text
@@ -21,53 +20,18 @@ import qualified Data.ByteString.Lazy as BS
 import qualified Data.Proxy as P
 import qualified Data.Vector.Sized as Vec
 
--- Example opcodes we pass to the assembler:
--- input:
---  TestOpcode LabelText -- label references
--- output:
---  TetOpcode Int64 -- resolved label references
+testSeq0 :: ASM.Container (ASM.Atom (Test2 (ASM.Reference ASM.LabelText))) 0
+testSeq0 = ASM.Nil
 
-data TestOpcode address
-  = JumpTo address
-  | JumpRelative address
-  | Literal Word8
-  deriving (Show, Eq, Functor, Foldable, Traversable, Generic)
+testSeq1 :: ASM.Container (ASM.Atom (Test2 (ASM.Reference ASM.LabelText))) 7
+testSeq1 = ASM.Atom (JumpTo2 (ASM.RefVA "test"))
+  `ASM.Cons` (ASM.Atom (Literal2 0x10) `ASM.Cons` ASM.Nil)
 
--- | Warning, it should be tested that this matches the asmToBin lengths...
-instance ASM.ByteSized (TestOpcode a) where
-  sizeof (JumpTo _)       = 1 + 4
-  sizeof (JumpRelative _) = 1 + 1
-  sizeof (Literal _)      = 2
+testSeq2 :: ASM.Container (ASM.Atom (Test2 (ASM.Reference ASM.LabelText))) 0
+testSeq2 = ASM.Label "TEST" `ASM.Cons` ASM.Nil
 
-instance ASM.Address Word32
-
-instance ASM.ToWord8s (TestOpcode (ASM.Reference Word.Word32)) where
-  toWord8s (JumpTo (ASM.RefVA i32))
-    = do
-      pure $ Seq.fromList $ 0x01 : BS.unpack (Bin.runPut (Bin.putWord32le (fromIntegral i32)))
-  toWord8s (JumpRelative (ASM.RefForwardOffsetVASolved {..}))
-    = do
-      delta   <- refCurrentVA `ASM.safeMinus` refTargetVA
-      deltaW8 <- ASM.safeDowncast (fromIntegral delta)
-      pure $ Seq.fromList [0x02, deltaW8]
-  toWord8s (Literal word8) =
-      pure $ Seq.fromList [0x03, word8]
-  toWord8s x = Left
-    $ ASM.ReferenceTypeNotSupportedInOpcode $
-      "Invalid combination of opcodes and references: " <> Text.pack (show x)
-  safe = undefined
-
-testSeq0 :: Seq.Seq (ASM.Atom (TestOpcode (ASM.Reference ASM.LabelText)))
-testSeq0 = Seq.fromList []
-
-testSeq1 :: Seq.Seq (ASM.Atom (TestOpcode (ASM.Reference ASM.LabelText)))
-testSeq1 = Seq.fromList [ASM.Atom (JumpTo (ASM.RefVA "test"))]
-
-testSeq2 :: Seq.Seq (ASM.Atom (TestOpcode (ASM.Reference ASM.LabelText)))
-testSeq2 = Seq.fromList [ASM.Label "TEST"]
-
-testSeq3 :: Seq.Seq (ASM.Atom (TestOpcode (ASM.Reference ASM.LabelText)))
-testSeq3 = Seq.fromList [ASM.Atom (Literal 0x10)]
+testSeq3 :: ASM.Container (ASM.Atom (Test2 (ASM.Reference ASM.LabelText))) 2
+testSeq3 = ASM.Atom (Literal2 0x10) `ASM.Cons` ASM.Nil
 
 defaultConfig :: ASM.Config Word.Word32
 defaultConfig = ASM.Config {..}
@@ -78,6 +42,7 @@ data Test2 (address :: Type) (n :: Nat) where
   JumpTo2 :: address -> Test2 address 5
   JumpRelative2 :: address -> Test2 address 2
   Literal2 :: Word8 -> Test2 address 2
+  deriving (Functor)
 
 instance Show (Test2 a n) where
   show _ = "Test2 {contents not shown}"
@@ -85,18 +50,39 @@ instance Show (Test2 a n) where
 instance (KnownNat n) => ASM.ByteSized (Test2 a n) where
   sizeof _ = natVal (P.Proxy @n)
 
-instance ASM.ToWord8s (Test2 (ASM.Reference Word.Word32) n) where
-  toWord8s (JumpTo2 (ASM.RefVA i32)) = do
-    pure $ Seq.fromList $ 0x01 : BS.unpack (Bin.runPut (Bin.putWord32le (fromIntegral i32)))
-  toWord8s (JumpRelative2 (ASM.RefForwardOffsetVASolved {..})) = do
+errorText :: Text.Text -> a
+errorText = error . Text.unpack
+
+-- Could be in another module, is it possible to do this more efficient?
+
+class (Integral a, ASM.Address a) => Reference32 a where
+  word32le :: a -> (Word8, Word8, Word8, Word8)
+
+instance Reference32 Word.Word32 where
+  word32le w32
+    = case BS.unpack (Bin.runPut (Bin.putWord32le w32)) of
+      [w0, w1, w2, w3] -> (w0, w1, w2, w3)
+      _                -> error "internal error"
+
+-- We make labels to be fake references for completeness sake
+instance Reference32 ASM.LabelText where
+  word32le _ = word32le (0 :: Word32)
+
+instance Integral ASM.LabelText where
+  quotRem = undefined
+  toInteger = undefined
+
+instance (Reference32 ref) => ASM.ToWord8s (Test2 (ASM.Reference ref)) where
+  safe (JumpTo2 (ASM.RefVA i32)) = do
+    pure $ 0x01 `Vec.cons` Vec.fromTuple (word32le i32)
+  safe (JumpRelative2 (ASM.RefForwardOffsetVASolved {..})) = do
     delta   <- refCurrentVA `ASM.safeMinus` refTargetVA
     deltaW8 <- ASM.safeDowncast (fromIntegral delta)
-    pure $ Seq.fromList [0x02, deltaW8]
-  toWord8s (Literal2 w8) = pure $ Seq.fromList [0x03, w8]
-  toWord8s x = Left
-    $ ASM.ReferenceTypeNotSupportedInOpcode $
-      "Invalid combination of opcodes and references: " <> Text.pack (show x)
-  safe = undefined
+    pure $ Vec.fromTuple (0x02, deltaW8)
+  safe (Literal2 w8) = pure $ Vec.fromTuple (0x03, w8)
+  safe x = Left $
+        ASM.ReferenceTypeNotSupportedInOpcode $
+          "Invalid combination of opcodes and references: " <> Text.pack (show x)
 
 convert :: Test2 (ASM.Reference Word.Word32) n -> Vec.Vector n Word8
 convert (JumpTo2 (ASM.RefVA _i32)) =
@@ -105,8 +91,14 @@ convert (Literal2 w8) = Vec.fromTuple (0x03, w8)
 convert _ = error "AA"
 
 -- Provide code for mapping addresses/references?
-instance ASM.FunctorSized Test2 where
+instance ASM.FunctorSized2 Test2 where
+  fmapSized2 f = go
+    where
+      go (JumpTo2 ref) = JumpTo2 (f ref)
+      go (JumpRelative2 ref) = JumpRelative2 (f ref)
+      go (Literal2 w8) = Literal2 w8
 
+instance (ASM.Address Word32)
 
 main :: IO ()
 main = hspec $ do

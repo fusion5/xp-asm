@@ -59,6 +59,7 @@ scanLabels s
       , aslsLabels = Map.empty
       }
 
+-- TODO: Consider doing this without the external dependency (BoundedArithmetic)
 safePlus :: (Address a) => a -> a -> Either AssemblyError a
 safePlus = boundedBinopMapEx (Arithmetic . SEW) B.plusBounded
 
@@ -68,9 +69,9 @@ safeMinus = boundedBinopMapEx (Arithmetic . SEW) B.plusBounded
 safeDowncast :: (Integral a, Bounded a) => Integer -> Either AssemblyError a
 safeDowncast = Either.mapLeft (Arithmetic . SEW) . B.fromIntegerBounded
 
--- This might be expensive...
-operationWidth :: (Address address, ToWord8s opcode, KnownNat n) => opcode n -> address
-operationWidth = fromIntegral . Vec.length . safe
+operationWidth :: (Address address, ToWord8s opcode, KnownNat n) => opcode n -> Either AssemblyError address
+operationWidth opc =
+  fromIntegral . Vec.length <$> safe opc
 
 scanAtom
   :: (Address address, ToWord8s opcode, KnownNat n1, KnownNat n2)
@@ -80,8 +81,9 @@ scanAtom
 scanAtom s@StateLabelScan {..} = go
   where
     go (Atom op) = do
-        newIA  <- operationWidth op `safePlus` aslsIAOffset
-        newRVA <- operationWidth op `safePlus` aslsRelativeVAOffset
+        width  <- operationWidth op
+        newIA  <- width `safePlus` aslsIAOffset
+        newRVA <- width `safePlus` aslsRelativeVAOffset
         pure s {
           aslsIAOffset  = newIA
         , aslsRelativeVAOffset = newRVA
@@ -98,7 +100,7 @@ scanAtom s@StateLabelScan {..} = go
 -- like in scanLabels. Perhaps this duplicate operation could be factored out, but it shouldn't
 -- be too expensive...
 solveReferences
-  :: (Address address, ToWord8s (op (Reference LabelText)))
+  :: (Address address, ToWord8s (op (Reference LabelText)), FunctorSized2 op)
   => Config address
   -> Map.Map LabelText (AddressInfo address)
   -> Container (Atom (op (Reference LabelText))) n
@@ -112,7 +114,12 @@ solveReferences c labelDictionary s
       }
 
 solveAtomReference
-  :: (Address address, ToWord8s (op (Reference LabelText)))
+  :: ( Address address
+     , ToWord8s (op (Reference LabelText))
+     , KnownNat n1
+     , KnownNat n2
+     , FunctorSized2 op
+     )
   => Config address
   -> Map.Map LabelText (AddressInfo address)
   -> StateReferenceSolve op address n1
@@ -122,16 +129,14 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..}
   = go
   where
     go (Atom op) = do
-      newOp <- Atom <$> mapMNats (MapMFunction $ solveReference asrsRelativeVAOffset) op
-      newRVA <- operationWidth op `safePlus` asrsRelativeVAOffset
+      newOp  <- Atom <$> mapMNats2 (MapMFunction2 $ solveReference asrsRelativeVAOffset) op
+      width  <- operationWidth op
+      newRVA <- width `safePlus` asrsRelativeVAOffset
       pure s
         { asrsAtoms = newOp `Cons` asrsAtoms
         , asrsRelativeVAOffset = newRVA
         }
-    go label@(Label _) =
-      pure s
-        { asrsAtoms = undefined -- label `Cons` asrsAtoms
-        }
+    go _label@(Label _) = pure s
 
     query labelText
       = Either.maybeToEither
@@ -162,6 +167,7 @@ assemble
   , ToWord8s (op (Reference LabelText))
   , ToWord8s (op (Reference address))
   , KnownNat n
+  , FunctorSized2 op
   )
   => Config address
   -> Container (Atom (op (Reference LabelText))) n
@@ -169,7 +175,7 @@ assemble
 assemble cfg input = do
   labelMap <- scanLabels input
   solvedReferences <- solveReferences cfg labelMap input
-  let inlined = safe solvedReferences
+  inlined <- safe solvedReferences
   pure $ toByteString inlined
   where
     toByteString = BS.pack . Vec.toList

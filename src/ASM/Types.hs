@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 {-- LANGUAGE TypeSynonymInstances #-}
 {-- LANGUAGE FlexibleInstances #-}
@@ -37,13 +38,30 @@ instance Eq SomeExceptionWrap where
 
 type LabelText = Text.Text
 
+-- Make LabelText into a fake reference for completeness...
+instance Real LabelText where toRational _ = 0
+instance Enum LabelText where
+  toEnum _ = ""
+  fromEnum _ = 0
+instance Num LabelText where
+  (+) = undefined
+  (*) = undefined
+  abs = undefined
+  signum = undefined
+  fromInteger = undefined
+  negate = undefined
+instance Bounded LabelText where
+  minBound = 0
+  maxBound = 0
+instance Address LabelText
+
 -- TODO: consider Foreign.Storable, add the 'alignment' method
 class ByteSized a where
   sizeof :: a -> Natural
 
 class ToWord8s (opcode :: Nat -> Type) where
   -- TODO: Add Either
-  safe :: forall n . opcode n -> Vec.Vector n Word8
+  safe :: forall n . opcode n -> Either AssemblyError (Vec.Vector n Word8)
 
 data Container (operation :: Nat -> Type) (n :: Nat) where
     -- One :: a n -> Container a n
@@ -73,13 +91,22 @@ foldMNats (FoldCallback f) e (Cons op container) = do
   f x op
 
 -- Because we cannot derive Functor for our opcode GADT
+-- A functor for sized containers over a sized component
 class FunctorSized (c :: (Nat -> Type) -> Nat -> Type) where
   fmapSized :: forall (a :: Nat -> Type) (b :: Nat -> Type) (n :: Nat)
-            . (a n -> b n) -> c a n -> c b n
+            .  (a n -> b n) -> c a n -> c b n
+
+-- A functor for sized containers over an unsized component
+class FunctorSized2 (c :: Type -> Nat -> Type) where
+  fmapSized2 :: forall (a :: Type) (b :: Type) (n :: Nat)
+             .  (a -> b) -> c a n -> c b n
 
 -- Corresponds to a -> m b
 newtype MapMFunction a b =
   MapMFunction (forall (n :: Nat) . KnownNat n => a n -> Either AssemblyError (b n))
+
+newtype MapMFunction2 a b =
+  MapMFunction2 (a -> Either AssemblyError b)
 
 -- The problem is we cannot sequenceM the eithers without losing the size information.
 -- This should fix that.
@@ -97,6 +124,16 @@ sequenceANats
   -> EitherSized (container a) n
 sequenceANats = mapMNats (MapMFunction eithersizedToEither) -- . eitherToEithersized
 
+sequenceANats2
+  :: forall
+     (n :: Nat)
+     (container :: Type -> Nat -> Type)
+     (a :: Type)
+  .  (FunctorSized2 container, KnownNat n)
+  => container (Either AssemblyError a) n
+  -> Either AssemblyError (container a n)
+sequenceANats2 = mapMNats2 (MapMFunction2 id) -- . eitherToEithersized
+
 mapMNats
   :: forall
      (n :: Nat)
@@ -104,8 +141,40 @@ mapMNats
      (a :: Nat -> Type)
      (b :: Nat -> Type)
   .  (FunctorSized container, KnownNat n)
-  => MapMFunction a b -> container a n -> EitherSized (container b) n
+  => MapMFunction a b
+  -> container a n
+  -> EitherSized (container b) n
 mapMNats (MapMFunction f) = sequenceANats . fmapSized (eitherToEithersized . f)
+
+mapMNats2
+  :: forall
+    (n :: Nat)
+    (container :: Type -> Nat -> Type)
+    (a :: Type)
+    (b :: Type)
+  . (FunctorSized2 container, KnownNat n)
+  => MapMFunction2 a b
+  -> container a n
+  -> Either AssemblyError (container b n)
+mapMNats2 (MapMFunction2 f) = sequenceANats2 . fmapSized2 f
+
+{-
+data Const x (n :: Nat) = Const { unConst :: x }
+
+mapMNats'
+  :: forall
+     (n :: Nat)
+     (container :: (Nat -> Type) -> Nat -> Type)
+     (a :: Type)
+     (b :: Type)
+  .  (FunctorSized container, KnownNat n)
+  => (a -> Either AssemblyError b)
+  -> container (Const a) n
+  -> EitherSized (container (Const b)) n
+mapMNats' _f = undefined
+  where
+    _liftF (Const c) f = Const <$> f c
+-}
 
 eitherToEithersized
   :: forall (a :: Nat -> Type) (n :: Nat)
@@ -125,8 +194,8 @@ eithersizedToEither (EitherSized e) = e
   -}
 
 instance ToWord8s opcode => ToWord8s (Container opcode) where
-  safe Nil = Vec.empty
-  safe (Cons el container) = safe el Vec.++ safe container
+  safe Nil = pure Vec.empty
+  safe (Cons el container) = (Vec.++) <$> safe el <*> safe container
 
 class (Num a, Ord a, Bounded a) => Address a where
 
@@ -171,33 +240,15 @@ data Reference address
       }
   deriving (Show)
 
-{-
-data Atom (operation :: Nat -> Type) (n :: Nat)
-  = Atom (operation n)
-  | Label LabelText
-  deriving (Show, Eq, Generic)
-
-instance ToWord8s operation => ToWord8s (Atom operation) where
-  safe (Atom op) = safe op
-  safe (Label _) = Vec.empty --
-  {- Produces:
-      Expected: Vec.Vector n Word8
-        Actual: Vec.Vector 0 Word8
-      ‘n’ is a rigid type variable bound by
-        the type signature for:
-          safe :: forall (n :: Nat). Atom operation -> Vec.Vector n Word8
-          -}
--}
-
 -- | The operation type is a subset of the instruction set, e.g. for x86 jmp, mov, etc.
 -- It can be, but not necessarily, polymorphic in the representation of address references.
 data Atom (operation :: Nat -> Type) (n :: Nat) where
   Atom :: operation n -> Atom operation n
-  Label :: LabelText   -> Atom operation 0
+  Label :: LabelText  -> Atom operation 0
 
 instance ToWord8s operation => ToWord8s (Atom operation) where
   safe (Atom op) = safe op
-  safe (Label _) = Vec.empty
+  safe (Label _) = pure $ Vec.empty
 
 -- | Constant parameters for the assembler.
 data Config address
