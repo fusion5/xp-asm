@@ -96,7 +96,7 @@ sequenceANats
   .  (FunctorSized container, KnownNat n)
   => container (Either AssemblyError a) n
   -> Either AssemblyError (container a n)
-sequenceANats = mapMNats id -- . eitherToEithersized
+sequenceANats = mapMNats id
 
 --
 mapMNats
