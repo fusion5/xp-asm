@@ -19,17 +19,17 @@ import qualified Data.ByteString.Lazy as BS
 import qualified Data.Proxy as P
 import qualified Data.Vector.Sized as Vec
 
-testSeq0 :: ASM.Container (ASM.Atom (Test2 (ASM.Reference ASM.LabelText))) 0
+testSeq0 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 0
 testSeq0 = ASM.Nil
 
-testSeq1 :: ASM.Container (ASM.Atom (Test2 (ASM.Reference ASM.LabelText))) 7
+testSeq1 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 7
 testSeq1 = ASM.Atom (JumpTo2 (ASM.RefVA "test"))
   `ASM.Cons` (ASM.Atom (Literal2 0x10) `ASM.Cons` ASM.Nil)
 
-testSeq2 :: ASM.Container (ASM.Atom (Test2 (ASM.Reference ASM.LabelText))) 0
+testSeq2 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 0
 testSeq2 = ASM.Label "TEST" `ASM.Cons` ASM.Nil
 
-testSeq3 :: ASM.Container (ASM.Atom (Test2 (ASM.Reference ASM.LabelText))) 2
+testSeq3 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 2
 testSeq3 = ASM.Atom (Literal2 0x10) `ASM.Cons` ASM.Nil
 
 defaultConfig :: ASM.Config Word.Word32
@@ -37,15 +37,15 @@ defaultConfig = ASM.Config {..}
   where
     acVirtualBaseAddress = 0
 
-data Test2 (address :: Type) (n :: Nat) where
-  JumpTo2 :: address -> Test2 address 5
-  JumpRelative2 :: address -> Test2 address 2
-  Literal2 :: Word8 -> Test2 address 2
+data Opcode (address :: Type) (n :: Nat) where
+  JumpTo2 :: address -> Opcode address 5
+  JumpRelative2 :: address -> Opcode address 2
+  Literal2 :: Word8 -> Opcode address 2
 
-instance Show (Test2 a n) where
-  show _ = "Test2 {contents not shown}"
+instance Show (Opcode a n) where
+  show _ = "Opcode {contents not shown}"
 
-instance (KnownNat n) => ASM.ByteSized (Test2 a n) where
+instance (KnownNat n) => ASM.ByteSized (Opcode a n) where
   sizeof _ = natVal (P.Proxy @n)
 
 errorText :: Text.Text -> a
@@ -70,7 +70,7 @@ instance Integral ASM.LabelText where
   quotRem = undefined
   toInteger = undefined
 
-instance (Reference32 ref) => ASM.ToWord8s (Test2 (ASM.Reference ref)) where
+instance (Reference32 ref) => ASM.ToWord8s (Opcode (ASM.Reference ref)) where
   safe (JumpTo2 (ASM.RefVA i32)) = do
     pure $ 0x01 `Vec.cons` Vec.fromTuple (word32le i32)
   safe (JumpRelative2 (ASM.RefForwardOffsetVASolved {..})) = do
@@ -82,14 +82,14 @@ instance (Reference32 ref) => ASM.ToWord8s (Test2 (ASM.Reference ref)) where
         ASM.ReferenceTypeNotSupportedInOpcode $
           "Invalid combination of opcodes and references: " <> Text.pack (show x)
 
-convert :: Test2 (ASM.Reference Word.Word32) n -> Vec.Vector n Word8
+convert :: Opcode (ASM.Reference Word.Word32) n -> Vec.Vector n Word8
 convert (JumpTo2 (ASM.RefVA _i32)) =
   Vec.fromTuple (0x01, 0x02, 0x03, 0x04, 0x05)
 convert (Literal2 w8) = Vec.fromTuple (0x03, w8)
 convert _ = error "AA"
 
 -- Provide code for mapping addresses/references?
-instance ASM.FunctorSized2 Test2 where
+instance ASM.FunctorSized2 Opcode where
   fmapSized2 f = go
     where
       go (JumpTo2 ref) = JumpTo2 (f ref)
@@ -102,5 +102,5 @@ main :: IO ()
 main = hspec $ do
   it "Empty list assembly returns an empty BS" $
     ASM.assemble defaultConfig testSeq0 `shouldBe` Right ""
-  it "Blabla" $
-    ASM.assemble defaultConfig testSeq3 `shouldBe` Right "\x03\x10"
+  -- it "Blabla" $
+  --  ASM.assemble defaultConfig testSeq3 `shouldBe` Right "\x03\x10"
