@@ -10,7 +10,6 @@ module ASM.Types (
   , AddressInfo (..)
   , AssemblyError (..)
   , Address
-  , MapMFunction (..)
   , foldMContainer
   , mapMNats
   , FoldCallback (..)
@@ -87,10 +86,7 @@ foldMContainer (FoldCallback f) e (Cons op container) = do
 -- A functor for sized containers over an unsized component
 class FunctorSized (c :: Type -> Nat -> Type) where
   fmapSized :: forall (a :: Type) (b :: Type) (n :: Nat)
-             .  (a -> b) -> c a n -> c b n
-
-newtype MapMFunction a b =
-  MapMFunction (a -> Either AssemblyError b)
+             . (a -> b) -> c a n -> c b n
 
 sequenceANats
   :: forall
@@ -100,8 +96,9 @@ sequenceANats
   .  (FunctorSized container, KnownNat n)
   => container (Either AssemblyError a) n
   -> Either AssemblyError (container a n)
-sequenceANats = mapMNats (MapMFunction id) -- . eitherToEithersized
+sequenceANats = mapMNats id -- . eitherToEithersized
 
+--
 mapMNats
   :: forall
     (n :: Nat)
@@ -109,10 +106,10 @@ mapMNats
     (a :: Type)
     (b :: Type)
   . (FunctorSized container, KnownNat n)
-  => MapMFunction a b
+  => (a -> Either AssemblyError b)
   -> container a n
   -> Either AssemblyError (container b n)
-mapMNats (MapMFunction f) = sequenceANats . fmapSized f
+mapMNats f = sequenceANats . fmapSized f
 
 instance ToWord8s opcode => ToWord8s (Container opcode) where
   safe Nil = pure Vec.empty

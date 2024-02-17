@@ -140,7 +140,7 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..}
   = go
   where
     go (Atom op) = do
-      newOp  <- Atom <$> mapMNats (MapMFunction $ solveReference asrsRelativeVAOffset) op
+      newOp  <- Atom <$> mapMNats (solveReference asrsRelativeVAOffset) op
       let width = operationWidth op
       newRVA <- fromIntegral width `safePlus` asrsRelativeVAOffset
       pure s
