@@ -71,13 +71,15 @@ instance ASM.ToWord8s (Opcode (ASM.Reference Word.Word32)) where
         ASM.ReferenceTypeNotSupportedInOpcode $
           "Invalid combination of opcodes and references: " <> Text.pack (show x)
 
--- Provide code for mapping addresses/references?
-instance ASM.FunctorSized Opcode where
-  fmapSized f = go
+-- Provide code for updating addresses/references in an Applicative context
+-- (in our case Either Exception). This boilerplate is required because
+-- it's not possible to derive instances for Opcode.
+instance ASM.FunctorMSized Opcode where
+  mapMSized f = go
     where
-      go (JumpTo ref) = JumpTo (f ref)
-      go (JumpRelative ref) = JumpRelative (f ref)
-      go (Literal w8) = Literal w8
+      go (JumpTo ref) = JumpTo <$> f ref
+      go (JumpRelative ref) = JumpRelative <$> f ref
+      go (Literal w8) = pure $ Literal w8
 
 instance (ASM.Address Word32)
 
@@ -85,5 +87,7 @@ main :: IO ()
 main = hspec $ do
   it "Empty list assembly returns an empty BS" $
     ASM.assemble defaultConfig testSeq0 `shouldBe` Right ""
-  -- it "A non empty sequence results in a sequence of bytes" $
-  --  ASM.assemble defaultConfig testSeq3 `shouldBe` Right "\x03\x10"
+  it "Undefined reference should result in an error" $
+    ASM.assemble defaultConfig testSeq1 `shouldBe` Left (ASM.ReferenceMissing "test")
+  it "A non empty sequence results in a sequence of bytes" $
+    ASM.assemble defaultConfig testSeq3 `shouldBe` Right "\x03\x10"

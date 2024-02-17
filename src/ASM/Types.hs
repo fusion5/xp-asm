@@ -4,23 +4,22 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 
 module ASM.Types (
-    StateLabelScan (..)
-  , StateReferenceSolve (..)
-  , Config (..)
+    Address
   , AddressInfo (..)
   , AssemblyError (..)
-  , Address
-  , foldMContainer
-  , mapMNats
-  , FoldCallback (..)
-  , ByteSized (..)
-  , Reference (..)
   , Atom (..)
-  , LabelText
+  , ByteSized (..)
+  , Config (..)
   , Container (..)
-  , ToWord8s (..)
-  , FunctorSized (..)
+  , FoldCallback (..)
+  , FunctorMSized (..)
+  , LabelText
+  , Reference (..)
   , SomeExceptionWrap (..)
+  , StateLabelScan (..)
+  , StateReferenceSolve (..)
+  , ToWord8s (..)
+  , foldMContainer
 ) where
 
 import Common
@@ -82,34 +81,14 @@ foldMContainer (FoldCallback f) e (Cons op container) = do
   x <- foldMContainer (FoldCallback f) e container
   f x op
 
--- Because we cannot derive Functor for our opcode GADT
--- A functor for sized containers over an unsized component
-class FunctorSized (c :: Type -> Nat -> Type) where
-  fmapSized :: forall (a :: Type) (b :: Type) (n :: Nat)
-             . (a -> b) -> c a n -> c b n
-
-sequenceANats
-  :: forall
-     (n :: Nat)
-     (container :: Type -> Nat -> Type)
-     (a :: Type)
-  .  (FunctorSized container, KnownNat n)
-  => container (Either AssemblyError a) n
-  -> Either AssemblyError (container a n)
-sequenceANats = mapMNats id
-
---
-mapMNats
-  :: forall
-    (n :: Nat)
-    (container :: Type -> Nat -> Type)
-    (a :: Type)
-    (b :: Type)
-  . (FunctorSized container, KnownNat n)
-  => (a -> Either AssemblyError b)
-  -> container a n
-  -> Either AssemblyError (container b n)
-mapMNats f = sequenceANats . fmapSized f
+-- Because we cannot derive Functor for multi-type-parameter GADT:
+-- A functor for sized containers over an unsized component. In our
+-- case the container is the opcode set and the unsized component is
+-- the address type. This is used to replace label references with
+-- actual addresses.
+class FunctorMSized (c :: Type -> Nat -> Type) where
+  mapMSized :: forall (a :: Type) (b :: Type) (n :: Nat) m
+            . Applicative m => (a -> m b) -> c a n -> m (c b n)
 
 instance ToWord8s opcode => ToWord8s (Container opcode) where
   safe Nil = pure Vec.empty

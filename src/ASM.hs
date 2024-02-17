@@ -110,7 +110,7 @@ solveReferences
   ::
   ( Address address
   , ByteSized (op (Reference LabelText))
-  , FunctorSized op
+  , FunctorMSized op
   )
   => Config address
   -> Map.Map LabelText (AddressInfo address)
@@ -129,7 +129,7 @@ solveAtomReference
      , ByteSized (op (Reference LabelText))
      , KnownNat n1
      , KnownNat n2
-     , FunctorSized op
+     , FunctorMSized op
      )
   => Config address
   -> Map.Map LabelText (AddressInfo address)
@@ -140,7 +140,7 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..}
   = go
   where
     go (Atom op) = do
-      newOp  <- Atom <$> mapMNats (solveReference asrsRelativeVAOffset) op
+      newOp  <- Atom <$> mapMSized (solveReference asrsRelativeVAOffset) op
       let width = operationWidth op
       newRVA <- fromIntegral width `safePlus` asrsRelativeVAOffset
       pure s
@@ -178,7 +178,7 @@ assemble
   , ByteSized (op (Reference LabelText))
   , ToWord8s (op (Reference address))
   , KnownNat n
-  , FunctorSized op
+  , FunctorMSized op
   )
   => Config address
   -> Container (Atom (op (Reference LabelText))) n
