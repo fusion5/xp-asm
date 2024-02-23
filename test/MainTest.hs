@@ -35,6 +35,14 @@ testSeq3 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 2
 testSeq3 =
   ASM.Tree (ASM.Atom (Literal 0x10)) ASM.Leaf ASM.Leaf
 
+testSeq4 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 4
+testSeq4 =
+  ASM.Tree
+    (ASM.Atom (Literal 0x10))
+    (ASM.Tree (ASM.Atom $ Literal 0x20) ASM.Leaf ASM.Leaf)
+    ASM.Leaf
+
+
 defaultConfig :: ASM.Config Word.Word32
 defaultConfig = ASM.Config {..}
   where
@@ -89,5 +97,7 @@ main = hspec $ do
     ASM.assemble defaultConfig testSeq0 `shouldBe` Right ""
   it "Undefined reference should result in an error" $
     ASM.assemble defaultConfig testSeq1 `shouldBe` Left (ASM.ReferenceMissing "test")
-  it "A non empty sequence results in a sequence of bytes" $
+  it "A sequence of 1 opcode results in a sequence of bytes" $
     ASM.assemble defaultConfig testSeq3 `shouldBe` Right "\x03\x10"
+  it "A sequence of 2 opcodes results in a sequence of bytes" $
+    ASM.assemble defaultConfig testSeq4 `shouldBe` Right "\x03\x10\x03\x20"
