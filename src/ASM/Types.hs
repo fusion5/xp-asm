@@ -22,7 +22,8 @@ module ASM.Types (
   , foldMContainer
 ) where
 
-import Common
+import Prelude hiding ((>>=))
+import Common hiding ((>>=))
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
@@ -49,6 +50,9 @@ instance Eq SomeExceptionWrap where
 type LabelText = Text.Text
 
 -- TODO: consider Foreign.Storable, add the 'alignment' method
+-- ByteSized is something that has a known size but its contents is
+-- not necessarily known (label references for example are of known
+-- size but the addresses are only known after a first pass)
 class ByteSized (a :: Nat -> Type) where
   sizeof :: (KnownNat n) => a n -> Natural
 
@@ -62,6 +66,17 @@ data Container (operation :: Nat -> Type) (n :: Nat) where
          => operation n1
          -> Container operation n2
          -> Container operation (n1 + n2)
+
+-- Container of Atoms Monad to facilitate the construction of sequences of Atoms (meaning
+-- opcodes and labels)
+{-
+(>>=)
+  :: forall atom n n1 n2. Container atom n1
+  -> (atom n -> Container atom n2)
+  -> Container atom (n2 + n1)
+Nil >>= _ = Nil
+(Cons x xs) >>= f = (f x) ++ xs
+-}
 
 -- Needed because we need the forall qualifiers on the counts. Is there a simpler way?
 newtype FoldCallback m state operation =
