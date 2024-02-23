@@ -53,8 +53,9 @@ class ByteSized (a :: Nat -> Type) where
   sizeof :: (KnownNat n) => a n -> Natural
 
 class Binary (opcode :: Nat -> Type) where
-  encode :: forall n . opcode n -> Either AssemblyError (Vec.Vector n Word8)
+  encode :: opcode n -> Either AssemblyError (Vec.Vector n Word8)
 
+-- | A list of sized elements. Its size is the sum of its elements.
 data Container (operation :: Nat -> Type) (n :: Nat) where
     Nil  :: Container a 0
     Cons :: (KnownNat n1, KnownNat n2, n ~ n1 + n2)
