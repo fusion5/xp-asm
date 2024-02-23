@@ -59,15 +59,15 @@ word32le w32
     [w0, w1, w2, w3] -> (w0, w1, w2, w3)
     _                -> error "internal error"
 
-instance ASM.ToWord8s (Opcode (ASM.Reference Word.Word32)) where
-  safe (JumpTo (ASM.RefVA i32)) = do
+instance ASM.Binary (Opcode (ASM.Reference Word.Word32)) where
+  encode (JumpTo (ASM.RefVA i32)) = do
     pure $ 0x01 `Vec.cons` Vec.fromTuple (word32le i32)
-  safe (JumpRelative (ASM.RefForwardOffsetVASolved {..})) = do
+  encode (JumpRelative (ASM.RefForwardOffsetVASolved {..})) = do
     delta   <- refCurrentVA `ASM.safeMinus` refTargetVA
     deltaW8 <- ASM.safeDowncast (fromIntegral delta)
     pure $ Vec.fromTuple (0x02, deltaW8)
-  safe (Literal w8) = pure $ Vec.fromTuple (0x03, w8)
-  safe x = Left $
+  encode (Literal w8) = pure $ Vec.fromTuple (0x03, w8)
+  encode x = Left $
         ASM.ReferenceTypeNotSupportedInOpcode $
           "Invalid combination of opcodes and references: " <> Text.pack (show x)
 

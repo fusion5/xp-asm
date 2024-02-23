@@ -18,7 +18,7 @@ module ASM.Types (
   , SomeExceptionWrap (..)
   , StateLabelScan (..)
   , StateReferenceSolve (..)
-  , ToWord8s (..)
+  , Binary (..)
   , foldMContainer
 ) where
 
@@ -52,8 +52,8 @@ type LabelText = Text.Text
 class ByteSized (a :: Nat -> Type) where
   sizeof :: (KnownNat n) => a n -> Natural
 
-class ToWord8s (opcode :: Nat -> Type) where
-  safe :: forall n . opcode n -> Either AssemblyError (Vec.Vector n Word8)
+class Binary (opcode :: Nat -> Type) where
+  encode :: forall n . opcode n -> Either AssemblyError (Vec.Vector n Word8)
 
 data Container (operation :: Nat -> Type) (n :: Nat) where
     Nil  :: Container a 0
@@ -90,9 +90,9 @@ class FunctorMSized (c :: Type -> Nat -> Type) where
   mapMSized :: forall (a :: Type) (b :: Type) (n :: Nat) m
             . Applicative m => (a -> m b) -> c a n -> m (c b n)
 
-instance ToWord8s opcode => ToWord8s (Container opcode) where
-  safe Nil = pure Vec.empty
-  safe (Cons el container) = (Vec.++) <$> safe el <*> safe container
+instance Binary opcode => Binary (Container opcode) where
+  encode Nil = pure Vec.empty
+  encode (Cons el container) = (Vec.++) <$> encode el <*> encode container
 
 class (Num a, Ord a, Bounded a) => Address a where
 
@@ -143,9 +143,9 @@ data Atom (operation :: Nat -> Type) (n :: Nat) where
   Atom :: operation n -> Atom operation n
   Label :: LabelText  -> Atom operation 0
 
-instance ToWord8s operation => ToWord8s (Atom operation) where
-  safe (Atom op) = safe op
-  safe (Label _) = pure Vec.empty
+instance Binary operation => Binary (Atom operation) where
+  encode (Atom op) = encode op
+  encode (Label _) = pure Vec.empty
 
 -- | Constant parameters for the assembler.
 data Config address

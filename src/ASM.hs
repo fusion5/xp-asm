@@ -26,7 +26,7 @@ import qualified Data.Vector.Sized as Vec
 --  2. replace labels with the required references by using the map from (1) (solveReferences)
 --
 -- The module is polymorphic on a data type typically denotated with 'op', which implements
--- type classes 'ToWord8s' and 'ByteSized'. Values of this datatype in a sequence are elements that
+-- type classes 'Binary' and 'ByteSized'. Values of this datatype in a sequence are elements that
 -- can be converted to a binary format. The module facilitates outputting several types of
 -- references to other 'op' elements in the sequence by means of the 'Reference' type.
 
@@ -176,7 +176,7 @@ assemble
   ::
   ( Address address
   , ByteSized (op (Reference LabelText))
-  , ToWord8s (op (Reference address))
+  , Binary (op (Reference address))
   , KnownNat n
   , FunctorMSized op
   )
@@ -186,7 +186,7 @@ assemble
 assemble cfg input = do
   labelMap <- scanLabels input
   solvedReferences <- solveReferences cfg labelMap input
-  inlined <- safe solvedReferences
+  inlined <- encode solvedReferences
   pure $ toByteString inlined
   where
     toByteString = BS.pack . Vec.toList
