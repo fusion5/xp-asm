@@ -55,12 +55,12 @@ class Binary (opcode :: Nat -> Type) where
 
 -- | A list of sized elements. Its size is the sum of its elements.
 data Container (operation :: Nat -> Type) (n :: Nat) where
-    Leaf :: Container a 0
-    Tree :: (KnownNat n1, KnownNat n2, KnownNat n3, n ~ n1 + n2 + n3)
-         => operation n1
+    Nil  :: Container operation 0
+    Leaf :: operation n -> Container operation n
+    Tree :: (KnownNat n1, KnownNat n2, n ~ n1 + n2)
+         => Container operation n1
          -> Container operation n2
-         -> Container operation n3
-         -> Container operation (n1 + n2 + n3)
+         -> Container operation (n1 + n2)
 
 -- Container of Atoms Monad to facilitate the construction of sequences of Atoms (meaning
 -- opcodes and labels)
@@ -87,11 +87,11 @@ foldMContainer
   -> state k
   -> Container operation n
   -> m (state (k + n))
-foldMContainer _ s Leaf = pure s
-foldMContainer (FoldCallback f) s0 (Tree op c1 c2) = do
+foldMContainer _ s Nil  = pure s
+foldMContainer (FoldCallback f) s  (Leaf op)    = f s op
+foldMContainer (FoldCallback f) s0 (Tree c2 c1) = do
   s1 <- foldMContainer (FoldCallback f) s0 c1
-  s2 <- foldMContainer (FoldCallback f) s1 c2
-  f s2 op
+  foldMContainer (FoldCallback f) s1 c2
 
 -- Because we cannot derive Functor for multi-type-parameter GADT:
 -- A functor for sized containers over an unsized component. In our
@@ -103,12 +103,9 @@ class FunctorMSized (c :: Type -> Nat -> Type) where
             . Applicative m => (a -> m b) -> c a n -> m (c b n)
 
 instance Binary opcode => Binary (Container opcode) where
-  encode Leaf = pure Vec.empty
-  encode (Tree el c1 c2) = do
-    ee  <- encode el
-    ec1 <- encode c1
-    ec2 <- encode c2
-    pure $ ee Vec.++ ec1 Vec.++ ec2
+  encode Nil          = pure Vec.empty
+  encode (Leaf c)     = encode c
+  encode (Tree c1 c2) = (Vec.++) <$> encode c1 <*> encode c2
 
 class (Num a, Ord a, Bounded a) => Address a where
 

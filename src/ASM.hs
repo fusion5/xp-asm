@@ -115,7 +115,7 @@ solveReferences c labelDictionary s
     = asrsAtoms <$> foldMContainer (FoldCallback $ solveAtomReference c labelDictionary) initialState s
   where
     initialState = StateReferenceSolve
-      { asrsAtoms = Leaf
+      { asrsAtoms = Nil
       , asrsRelativeVAOffset = 0
       }
 
@@ -138,7 +138,7 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..}
       let width = natVal op
       newRVA <- fromIntegral width `safePlus` asrsRelativeVAOffset
       pure s
-        { asrsAtoms = Tree newOp asrsAtoms Leaf
+        { asrsAtoms = Tree (Leaf newOp) asrsAtoms
         , asrsRelativeVAOffset = newRVA
         }
     go _label@(Label _) = pure s

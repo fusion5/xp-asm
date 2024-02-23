@@ -18,29 +18,29 @@ import qualified Data.ByteString.Lazy as BS
 import qualified Data.Vector.Sized as Vec
 
 testSeq0 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 0
-testSeq0 = ASM.Leaf
+testSeq0 = ASM.Nil
 
 testSeq1 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 7
 testSeq1 =
   ASM.Tree
-    (ASM.Atom (JumpTo (ASM.RefVA "test")))
-    (ASM.Tree (ASM.Atom (Literal 0x10)) ASM.Leaf ASM.Leaf)
-    ASM.Leaf
+    (ASM.Leaf $ ASM.Atom (JumpTo (ASM.RefVA "test")))
+    (ASM.Tree (ASM.Leaf $ ASM.Atom (Literal 0x10)) ASM.Nil)
 
 testSeq2 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 0
 testSeq2 =
-  ASM.Tree (ASM.Label "TEST") ASM.Leaf ASM.Leaf
+  ASM.Tree (ASM.Leaf (ASM.Label "TEST")) ASM.Nil
 
 testSeq3 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 2
 testSeq3 =
-  ASM.Tree (ASM.Atom (Literal 0x10)) ASM.Leaf ASM.Leaf
+  ASM.Tree
+    (ASM.Tree (ASM.Leaf $ ASM.Atom (Literal 0x10)) ASM.Nil)
+    ASM.Nil
 
 testSeq4 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 4
 testSeq4 =
   ASM.Tree
-    (ASM.Atom (Literal 0x10))
-    (ASM.Tree (ASM.Atom $ Literal 0x20) ASM.Leaf ASM.Leaf)
-    ASM.Leaf
+    (ASM.Leaf $ ASM.Atom (Literal 0x10))
+    (ASM.Tree (ASM.Leaf $ ASM.Atom $ Literal 0x20) ASM.Nil)
 
 
 defaultConfig :: ASM.Config Word.Word32
@@ -101,3 +101,4 @@ main = hspec $ do
     ASM.assemble defaultConfig testSeq3 `shouldBe` Right "\x03\x10"
   it "A sequence of 2 opcodes results in a sequence of bytes" $
     ASM.assemble defaultConfig testSeq4 `shouldBe` Right "\x03\x10\x03\x20"
+
