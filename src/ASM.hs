@@ -1,5 +1,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE GADTs #-}
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
 
 module ASM
   ( assemble
@@ -26,9 +28,9 @@ import qualified Data.Vector.Sized as Vec
 --  2. replace labels with the required references by using the map from (1) (solveReferences)
 --
 -- The module is polymorphic on a data type typically denotated with 'op', which implements
--- type classes 'Binary' and 'ByteSized'. Values of this datatype in a sequence are elements that
+-- type class 'Binary'. Values of this datatype in a sequence are elements that
 -- can be converted to a binary format. The module facilitates outputting several types of
--- references to other 'op' elements in the sequence by means of the 'Reference' type.
+-- references to other 'op' elements in the sequence by means of the 'Reference' typ.
 
 boundedBinopMapEx
   :: (Address a)
@@ -43,8 +45,9 @@ boundedBinopMapEx ex op o1 o2
 -- | Extract all labels in the sequence in a Map
 scanLabels
   ::
+  forall op n address
+  .
   ( Address address
-  , ByteSized (op (Reference LabelText))
   , KnownNat n
   )
   => Container (Atom (op (Reference LabelText))) n
@@ -52,7 +55,7 @@ scanLabels
 scanLabels s
     = aslsLabels <$> foldMContainer (FoldCallback scanAtom) initialState s
   where
-    -- initialState :: Address address => StateLabelScan address 0
+    initialState :: StateLabelScan address 0
     initialState = StateLabelScan
       { aslsIAOffset = 0
       , aslsRelativeVAOffset = 0
@@ -69,17 +72,9 @@ safeMinus = boundedBinopMapEx (Arithmetic . SEW) B.plusBounded
 safeDowncast :: (Integral a, Bounded a) => Integer -> Either AssemblyError a
 safeDowncast = Either.mapLeft (Arithmetic . SEW) . B.fromIntegerBounded
 
-operationWidth
-  :: (ByteSized opcode, KnownNat n)
-  => opcode (n :: Nat)
-  -> Natural
-operationWidth = fromIntegral . sizeof
-
 scanAtom
   ::
   ( Address address
-  , ByteSized opcode
-  , KnownNat n1
   , KnownNat n2
   )
   => StateLabelScan address n1
@@ -88,7 +83,7 @@ scanAtom
 scanAtom s@StateLabelScan {..} = go
   where
     go (Atom op) = do
-        let width = operationWidth op
+        let width = natVal op -- Equals the KnownNat n2
         newIA  <- fromIntegral width `safePlus` aslsIAOffset
         newRVA <- fromIntegral width `safePlus` aslsRelativeVAOffset
         pure s {
@@ -109,8 +104,8 @@ scanAtom s@StateLabelScan {..} = go
 solveReferences
   ::
   ( Address address
-  , ByteSized (op (Reference LabelText))
   , FunctorMSized op
+  , KnownNat n
   )
   => Config address
   -> Map.Map LabelText (AddressInfo address)
@@ -120,13 +115,12 @@ solveReferences c labelDictionary s
     = asrsAtoms <$> foldMContainer (FoldCallback $ solveAtomReference c labelDictionary) initialState s
   where
     initialState = StateReferenceSolve
-      { asrsAtoms = Nil
+      { asrsAtoms = Leaf
       , asrsRelativeVAOffset = 0
       }
 
 solveAtomReference
   :: ( Address address
-     , ByteSized (op (Reference LabelText))
      , KnownNat n1
      , KnownNat n2
      , FunctorMSized op
@@ -135,16 +129,16 @@ solveAtomReference
   -> Map.Map LabelText (AddressInfo address)
   -> StateReferenceSolve op address n1
   -> Atom (op (Reference LabelText)) n2
-  -> Either AssemblyError (StateReferenceSolve op address (n2 + n1))
+  -> Either AssemblyError (StateReferenceSolve op address (n1 + n2))
 solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..}
   = go
   where
     go (Atom op) = do
       newOp  <- Atom <$> mapMSized (solveReference asrsRelativeVAOffset) op
-      let width = operationWidth op
+      let width = natVal op
       newRVA <- fromIntegral width `safePlus` asrsRelativeVAOffset
       pure s
-        { asrsAtoms = newOp `Cons` asrsAtoms
+        { asrsAtoms = Tree newOp asrsAtoms Leaf
         , asrsRelativeVAOffset = newRVA
         }
     go _label@(Label _) = pure s
@@ -175,7 +169,6 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..}
 assemble
   ::
   ( Address address
-  , ByteSized (op (Reference LabelText))
   , Binary (op (Reference address))
   , KnownNat n
   , FunctorMSized op

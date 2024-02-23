@@ -2,13 +2,14 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 
 module ASM.Types (
     Address
   , AddressInfo (..)
   , AssemblyError (..)
   , Atom (..)
-  , ByteSized (..)
   , Config (..)
   , Container (..)
   , FoldCallback (..)
@@ -49,23 +50,17 @@ instance Eq SomeExceptionWrap where
 
 type LabelText = Text.Text
 
--- TODO: consider Foreign.Storable, add the 'alignment' method
--- ByteSized is something that has a known size but its contents is
--- not necessarily known (label references for example are of known
--- size but the addresses are only known after a first pass)
-class ByteSized (a :: Nat -> Type) where
-  sizeof :: (KnownNat n) => a n -> Natural
-
 class Binary (opcode :: Nat -> Type) where
   encode :: opcode n -> Either AssemblyError (Vec.Vector n Word8)
 
 -- | A list of sized elements. Its size is the sum of its elements.
 data Container (operation :: Nat -> Type) (n :: Nat) where
-    Nil  :: Container a 0
-    Cons :: (KnownNat n1, KnownNat n2, n ~ n1 + n2)
+    Leaf :: Container a 0
+    Tree :: (KnownNat n1, KnownNat n2, KnownNat n3, n ~ n1 + n2 + n3)
          => operation n1
          -> Container operation n2
-         -> Container operation (n1 + n2)
+         -> Container operation n3
+         -> Container operation (n1 + n2 + n3)
 
 -- Container of Atoms Monad to facilitate the construction of sequences of Atoms (meaning
 -- opcodes and labels)
@@ -87,15 +82,16 @@ newtype FoldCallback m state operation =
     )
 
 foldMContainer
-  :: (Monad m)
+  :: (Monad m , KnownNat k, KnownNat n)
   => FoldCallback m state operation
-  -> state 0
+  -> state k
   -> Container operation n
-  -> m (state n)
-foldMContainer _ e Nil = pure e
-foldMContainer (FoldCallback f) e (Cons op container) = do
-  x <- foldMContainer (FoldCallback f) e container
-  f x op
+  -> m (state (k + n))
+foldMContainer _ s Leaf = pure s
+foldMContainer (FoldCallback f) s0 (Tree op c1 c2) = do
+  s1 <- foldMContainer (FoldCallback f) s0 c1
+  s2 <- foldMContainer (FoldCallback f) s1 c2
+  f s2 op
 
 -- Because we cannot derive Functor for multi-type-parameter GADT:
 -- A functor for sized containers over an unsized component. In our
@@ -107,8 +103,12 @@ class FunctorMSized (c :: Type -> Nat -> Type) where
             . Applicative m => (a -> m b) -> c a n -> m (c b n)
 
 instance Binary opcode => Binary (Container opcode) where
-  encode Nil = pure Vec.empty
-  encode (Cons el container) = (Vec.++) <$> encode el <*> encode container
+  encode Leaf = pure Vec.empty
+  encode (Tree el c1 c2) = do
+    ee  <- encode el
+    ec1 <- encode c1
+    ec2 <- encode c2
+    pure $ ee Vec.++ ec1 Vec.++ ec2
 
 class (Num a, Ord a, Bounded a) => Address a where
 

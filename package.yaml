@@ -20,6 +20,8 @@ dependencies:
   - type-natural
   - vector
   - vector-sized
+  - ghc-typelits-natnormalise
+  - ghc-typelits-knownnat
 
 ghc-options:
   - -Wall

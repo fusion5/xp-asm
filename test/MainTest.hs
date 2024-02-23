@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeApplications #-}
 
 module MainTest where
 
@@ -16,21 +15,25 @@ import qualified Data.Binary.Put as Bin
 import qualified Data.Word as Word
 import qualified Data.Text as Text
 import qualified Data.ByteString.Lazy as BS
-import qualified Data.Proxy as P
 import qualified Data.Vector.Sized as Vec
 
 testSeq0 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 0
-testSeq0 = ASM.Nil
+testSeq0 = ASM.Leaf
 
 testSeq1 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 7
-testSeq1 = ASM.Atom (JumpTo (ASM.RefVA "test"))
-  `ASM.Cons` (ASM.Atom (Literal 0x10) `ASM.Cons` ASM.Nil)
+testSeq1 =
+  ASM.Tree
+    (ASM.Atom (JumpTo (ASM.RefVA "test")))
+    (ASM.Tree (ASM.Atom (Literal 0x10)) ASM.Leaf ASM.Leaf)
+    ASM.Leaf
 
 testSeq2 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 0
-testSeq2 = ASM.Label "TEST" `ASM.Cons` ASM.Nil
+testSeq2 =
+  ASM.Tree (ASM.Label "TEST") ASM.Leaf ASM.Leaf
 
 testSeq3 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 2
-testSeq3 = ASM.Atom (Literal 0x10) `ASM.Cons` ASM.Nil
+testSeq3 =
+  ASM.Tree (ASM.Atom (Literal 0x10)) ASM.Leaf ASM.Leaf
 
 defaultConfig :: ASM.Config Word.Word32
 defaultConfig = ASM.Config {..}
@@ -44,9 +47,6 @@ data Opcode (address :: Type) (n :: Nat) where
 
 instance Show (Opcode a n) where
   show _ = "Opcode {contents not shown}"
-
-instance ASM.ByteSized (Opcode a) where
-  sizeof (_ :: KnownNat n => Opcode a n) = natVal (P.Proxy @n)
 
 errorText :: Text.Text -> a
 errorText = error . Text.unpack
