@@ -1,7 +1,9 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE QualifiedDo #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 
@@ -21,10 +23,20 @@ module ASM.Types (
   , StateReferenceSolve (..)
   , Binary (..)
   , foldMContainer
+  , (++)
+    -- TODO: move to a different module
+  , WriterSized (..)
+  , (>>=)
+  , (>>)
+  , return
+  , write
+  , test
 ) where
 
-import Prelude hiding ((>>=))
-import Common hiding ((>>=))
+import Prelude hiding ((>>=), (>>), return, (++), pure, (<*>))
+import Common hiding ((>>=), (>>), return)
+
+import qualified Prelude as Prelude
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
@@ -55,23 +67,58 @@ class Binary (opcode :: Nat -> Type) where
 
 -- | A list of sized elements. Its size is the sum of its elements.
 data Container (operation :: Nat -> Type) (n :: Nat) where
-    Nil  :: Container operation 0
-    Leaf :: operation n -> Container operation n
-    Tree :: (KnownNat n1, KnownNat n2, n ~ n1 + n2)
-         => Container operation n1
-         -> Container operation n2
-         -> Container operation (n1 + n2)
+  Nil  :: Container operation 0
+  Leaf :: operation n -> Container operation n
+  Tree :: (KnownNat n1, KnownNat n2, n ~ n1 + n2)
+       => Container operation n1
+       -> Container operation n2
+       -> Container operation (n1 + n2)
 
--- Container of Atoms Monad to facilitate the construction of sequences of Atoms (meaning
--- opcodes and labels)
-{-
+-- Counterpart of Writer monad
+data WriterSized (w :: Nat -> Type) (a :: Type) (n :: Nat) where
+  WriterSized :: w n -> a -> WriterSized w a n
+
+return :: a -> WriterSized (Container operation) a 0
+return x = WriterSized Nil x
+
 (>>=)
-  :: forall atom n n1 n2. Container atom n1
-  -> (atom n -> Container atom n2)
-  -> Container atom (n2 + n1)
-Nil >>= _ = Nil
-(Cons x xs) >>= f = (f x) ++ xs
--}
+  :: (KnownNat n1, KnownNat n2)
+  => WriterSized (Container op) a n1
+  -> (a -> WriterSized (Container op) b n2)
+  -> WriterSized (Container op) b (n1 + n2)
+(>>=) (WriterSized c1 a) f
+  = case f a of
+      WriterSized c2 b -> WriterSized (c1 ++ c2) b
+
+(>>)
+  :: (KnownNat n1, KnownNat n2)
+  => WriterSized (Container op) a n1
+  -> WriterSized (Container op) b n2
+  -> WriterSized (Container op) b (n1 + n2)
+(>>) (WriterSized c1 _) (WriterSized c2 b)
+  = WriterSized (c1 ++ c2) b
+
+write :: a n -> WriterSized (Container a) () n
+write x = WriterSized (Leaf x) ()
+
+data Stuff (n :: Nat) where
+  Stuff      :: Stuff 2
+  OtherStuff :: Stuff 5
+
+test :: WriterSized (Container Stuff) () 7
+test = ASM.Types.do
+  _ <- write Stuff
+  _ <- write OtherStuff
+  return ()
+
+(++)
+  :: (KnownNat n1, KnownNat n2)
+  => Container atom n1
+  -> Container atom n2
+  -> Container atom (n1 + n2)
+Nil ++ c = c
+c ++ Nil = c
+l ++ r = Tree l r
 
 -- Needed because we need the forall qualifiers on the counts. Is there a simpler way?
 newtype FoldCallback m state operation =
@@ -87,7 +134,7 @@ foldMContainer
   -> state k
   -> Container operation n
   -> m (state (k + n))
-foldMContainer _ s Nil  = pure s
+foldMContainer _ s Nil  = Prelude.pure s
 foldMContainer (FoldCallback f) s  (Leaf op)    = f s op
 foldMContainer (FoldCallback f) s0 (Tree c2 c1) = do
   s1 <- foldMContainer (FoldCallback f) s0 c1
@@ -103,9 +150,9 @@ class FunctorMSized (c :: Type -> Nat -> Type) where
             . Applicative m => (a -> m b) -> c a n -> m (c b n)
 
 instance Binary opcode => Binary (Container opcode) where
-  encode Nil          = pure Vec.empty
+  encode Nil          = Prelude.pure Vec.empty
   encode (Leaf c)     = encode c
-  encode (Tree c1 c2) = (Vec.++) <$> encode c1 <*> encode c2
+  encode (Tree c1 c2) = (Vec.++) <$> encode c1 Prelude.<*> encode c2
 
 class (Num a, Ord a, Bounded a) => Address a where
 
@@ -158,7 +205,7 @@ data Atom (operation :: Nat -> Type) (n :: Nat) where
 
 instance Binary operation => Binary (Atom operation) where
   encode (Atom op) = encode op
-  encode (Label _) = pure Vec.empty
+  encode (Label _) = Prelude.pure Vec.empty
 
 -- | Constant parameters for the assembler.
 data Config address

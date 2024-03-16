@@ -16,6 +16,7 @@ import qualified Data.Word as Word
 import qualified Data.Text as Text
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.Vector.Sized as Vec
+-- import qualified Data.Sequence as Seq
 
 testSeq0 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 0
 testSeq0 = ASM.Nil
@@ -41,7 +42,6 @@ testSeq4 =
   ASM.Tree
     (ASM.Leaf $ ASM.Atom (Literal 0x10))
     (ASM.Tree (ASM.Leaf $ ASM.Atom $ Literal 0x20) ASM.Nil)
-
 
 defaultConfig :: ASM.Config Word.Word32
 defaultConfig = ASM.Config {..}
