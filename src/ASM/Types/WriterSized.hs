@@ -6,20 +6,25 @@
 module ASM.Types.WriterSized
   ( (>>=)
   , (>>)
-  , return
+  , WriterSized
+  , execWriter
+  , pure
+  , runWriter
   , write
   ) where
 
 -- Counterpart of Writer monad, but the produced output has a size.
 
-import Common hiding ((>>=), (>>), return)
+import qualified Prelude
+
+import Common hiding ((>>=), (>>))
 import Container
 
 data WriterSized (w :: Nat -> Type) (a :: Type) (n :: Nat) where
   WriterSized :: w n -> a -> WriterSized w a n
 
-return :: a -> WriterSized (Container operation) a 0
-return = WriterSized empty
+pure :: a -> WriterSized (Container operation) a 0
+pure = WriterSized empty
 
 (>>=)
   :: (KnownNat n1, KnownNat n2)
@@ -40,3 +45,9 @@ return = WriterSized empty
 
 write :: a n -> WriterSized (Container a) () n
 write x = WriterSized (singleton x) ()
+
+runWriter :: WriterSized (Container op) a n -> (a, Container op n)
+runWriter (WriterSized container x) = (x, container)
+
+execWriter :: WriterSized (Container op) a n -> Container op n
+execWriter = Prelude.snd Prelude.. runWriter

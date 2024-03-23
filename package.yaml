@@ -28,6 +28,7 @@ ghc-options:
   - -Wall
   - -Werror
   - -Wno-orphans
+  - -Wno-unused-do-bind
 
 library:
   source-dirs: 

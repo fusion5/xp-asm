@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE QualifiedDo #-}
 
 module MainTest where
 
@@ -8,10 +9,11 @@ import Test.Hspec
 
 import Common
 import Prelude
-import qualified Container
+import ASM.Types.WriterSized as WriterSized
 
 import qualified ASM
 import qualified ASM.Types as ASM
+import qualified Container
 
 import qualified Data.Binary.Put as Bin
 import qualified Data.Word as Word
@@ -19,24 +21,34 @@ import qualified Data.Text as Text
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.Vector.Sized as Vec
 
-testSeq0 :: Container.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 0
-testSeq0 = Container.empty
+type OpcodeLabels = Opcode (ASM.Reference ASM.LabelText)
 
-testSeq1 :: Container.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 7
-testSeq1
-  = Container.singleton (ASM.Atom (JumpTo (ASM.RefVA "test")))
-      Container.++ Container.singleton (ASM.Atom $ Literal 0x10)
+writeAtom :: Opcode ref n -> WriterSized (Container.Container (ASM.Atom (Opcode ref))) () n
+writeAtom = write . ASM.Atom
 
-testSeq2 :: Container.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 0
-testSeq2 = Container.singleton (ASM.Label "TEST")
+writeLabel :: ASM.LabelText -> WriterSized (Container.Container (ASM.Atom (Opcode ref))) () 0
+writeLabel = write . ASM.Label
 
-testSeq3 :: Container.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 2
-testSeq3 = Container.singleton (ASM.Atom $ Literal 0x10)
+testSeq0 :: ASM.AtomContainer OpcodeLabels 0
+testSeq0 = WriterSized.execWriter $ WriterSized.do
+  WriterSized.pure ()
 
-testSeq4 :: Container.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 4
+testSeq1 :: ASM.AtomContainer OpcodeLabels 7
+testSeq1 = WriterSized.execWriter $ WriterSized.do
+  writeAtom $ JumpTo (ASM.RefVA "test")
+  writeAtom $ Literal 0x10
+
+testSeq2 :: ASM.AtomContainer OpcodeLabels 0
+testSeq2 = WriterSized.execWriter $ writeLabel "TEST"
+
+testSeq3 :: ASM.AtomContainer OpcodeLabels 2
+testSeq3 = WriterSized.execWriter $ writeAtom $ Literal 0x10
+
+testSeq4 :: ASM.AtomContainer OpcodeLabels 4
 testSeq4
-  = Container.singleton (ASM.Atom $ Literal 0x10)
-      Container.++ Container.singleton (ASM.Atom $ Literal 0x20)
+  = execWriter $ WriterSized.do
+      writeAtom $ Literal 0x10
+      writeAtom $ Literal 0x20
 
 defaultConfig :: ASM.Config Word.Word32
 defaultConfig = ASM.Config {..}
@@ -63,12 +75,12 @@ word32le w32
 
 instance ASM.Encode (Opcode (ASM.Reference Word.Word32)) where
   encode (JumpTo (ASM.RefVA i32)) = do
-    pure $ 0x01 `Vec.cons` Vec.fromTuple (word32le i32)
+    Prelude.pure $ 0x01 `Vec.cons` Vec.fromTuple (word32le i32)
   encode (JumpRelative (ASM.RefForwardOffsetVASolved {..})) = do
     delta   <- refCurrentVA `ASM.safeMinus` refTargetVA
     deltaW8 <- ASM.safeDowncast (fromIntegral delta)
-    pure $ Vec.fromTuple (0x02, deltaW8)
-  encode (Literal w8) = pure $ Vec.fromTuple (0x03, w8)
+    Prelude.pure $ Vec.fromTuple (0x02, deltaW8)
+  encode (Literal w8) = Prelude.pure $ Vec.fromTuple (0x03, w8)
   encode x = Left $
         ASM.ReferenceTypeNotSupportedInOpcode $
           "Invalid combination of opcodes and references: " <> Text.pack (show x)
@@ -81,7 +93,7 @@ instance ASM.TraversableSized Opcode where
     where
       go (JumpTo ref) = JumpTo <$> f ref
       go (JumpRelative ref) = JumpRelative <$> f ref
-      go (Literal w8) = pure $ Literal w8
+      go (Literal w8) = Prelude.pure $ Literal w8
 
 instance (ASM.Address Word32)
 

@@ -18,7 +18,7 @@ module ASM.Types (
   , StateLabelScan (..)
   , StateReferenceSolve (..)
   , Encode (..)
-
+  , AtomContainer
 ) where
 
 import Prelude hiding ((>>=), (>>), return, (++), pure, (<*>))
@@ -34,6 +34,7 @@ import qualified Data.Text as Text
 import qualified Data.Map as Map
 import qualified Data.Vector.Sized as Vec
 
+type AtomContainer opc n = Container (Atom opc) n
 type LabelText = Text.Text
 
 -- Because we cannot derive the usual Haskell classes for multi-type-parameter GADTs, this helps to
