@@ -5,6 +5,7 @@ default-extensions:
   - DataKinds
   - ScopedTypeVariables
   - KindSignatures
+  - NoImplicitPrelude
 
 dependencies:
   - base

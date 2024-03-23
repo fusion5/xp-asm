@@ -1,11 +1,10 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QualifiedDo #-}
-{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
+{-# LANGUAGE RankNTypes #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
 
 module ASM.Types (
     Address
@@ -13,146 +12,42 @@ module ASM.Types (
   , AssemblyError (..)
   , Atom (..)
   , Config (..)
-  , Container (..)
-  , FoldCallback (..)
-  , FunctorMSized (..)
+  , TraversableSized (..)
   , LabelText
   , Reference (..)
-  , SomeExceptionWrap (..)
   , StateLabelScan (..)
   , StateReferenceSolve (..)
-  , Binary (..)
-  , foldMContainer
-  , (++)
-    -- TODO: move to a different module
-  , WriterSized (..)
-  , (>>=)
-  , (>>)
-  , return
-  , write
-  , test
+  , Encode (..)
+
 ) where
 
 import Prelude hiding ((>>=), (>>), return, (++), pure, (<*>))
 import Common hiding ((>>=), (>>), return)
 
-import qualified Prelude as Prelude
+import Container
+import ASM.Types.Exception
+import ASM.Types.Encode
+
+import qualified Prelude
 
 import qualified Data.Text as Text
 import qualified Data.Map as Map
-import qualified Control.Exception as Exception
 import qualified Data.Vector.Sized as Vec
-
-data AssemblyError
-  = Arithmetic SomeExceptionWrap
-  | ReferenceMissing LabelText
-  | FromLabelAfterTo
-  | ReferenceTypeNotSupportedInOpcode Text.Text
-  | OpcodeToByteString AssemblyError
-  | InternalError Text.Text
-  deriving (Show, Eq)
-
-instance Exception.Exception AssemblyError
-
-newtype SomeExceptionWrap = SEW Exception.SomeException deriving (Show)
-
--- Defining a manual instance because SomeException doesn't make it possible to derive
-instance Eq SomeExceptionWrap where
-  (SEW se1) == (SEW se2) = show se1 == show se2
 
 type LabelText = Text.Text
 
-class Binary (opcode :: Nat -> Type) where
-  encode :: opcode n -> Either AssemblyError (Vec.Vector n Word8)
-
--- | A list of sized elements. Its size is the sum of its elements.
-data Container (operation :: Nat -> Type) (n :: Nat) where
-  Nil  :: Container operation 0
-  Leaf :: operation n -> Container operation n
-  Tree :: (KnownNat n1, KnownNat n2, n ~ n1 + n2)
-       => Container operation n1
-       -> Container operation n2
-       -> Container operation (n1 + n2)
-
--- Counterpart of Writer monad
-data WriterSized (w :: Nat -> Type) (a :: Type) (n :: Nat) where
-  WriterSized :: w n -> a -> WriterSized w a n
-
-return :: a -> WriterSized (Container operation) a 0
-return x = WriterSized Nil x
-
-(>>=)
-  :: (KnownNat n1, KnownNat n2)
-  => WriterSized (Container op) a n1
-  -> (a -> WriterSized (Container op) b n2)
-  -> WriterSized (Container op) b (n1 + n2)
-(>>=) (WriterSized c1 a) f
-  = case f a of
-      WriterSized c2 b -> WriterSized (c1 ++ c2) b
-
-(>>)
-  :: (KnownNat n1, KnownNat n2)
-  => WriterSized (Container op) a n1
-  -> WriterSized (Container op) b n2
-  -> WriterSized (Container op) b (n1 + n2)
-(>>) (WriterSized c1 _) (WriterSized c2 b)
-  = WriterSized (c1 ++ c2) b
-
-write :: a n -> WriterSized (Container a) () n
-write x = WriterSized (Leaf x) ()
-
-data Stuff (n :: Nat) where
-  Stuff      :: Stuff 2
-  OtherStuff :: Stuff 5
-
-test :: WriterSized (Container Stuff) () 7
-test = ASM.Types.do
-  _ <- write Stuff
-  _ <- write OtherStuff
-  return ()
-
-(++)
-  :: (KnownNat n1, KnownNat n2)
-  => Container atom n1
-  -> Container atom n2
-  -> Container atom (n1 + n2)
-Nil ++ c = c
-c ++ Nil = c
-l ++ r = Tree l r
-
--- Needed because we need the forall qualifiers on the counts. Is there a simpler way?
-newtype FoldCallback m state operation =
-  FoldCallback
-    (  forall n1 n2
-    .  (KnownNat n1, KnownNat n2)
-    => (state n1 -> operation n2 -> m (state (n2 + n1)))
-    )
-
-foldMContainer
-  :: (Monad m , KnownNat k, KnownNat n)
-  => FoldCallback m state operation
-  -> state k
-  -> Container operation n
-  -> m (state (k + n))
-foldMContainer _ s Nil  = Prelude.pure s
-foldMContainer (FoldCallback f) s  (Leaf op)    = f s op
-foldMContainer (FoldCallback f) s0 (Tree c2 c1) = do
-  s1 <- foldMContainer (FoldCallback f) s0 c1
-  foldMContainer (FoldCallback f) s1 c2
-
--- Because we cannot derive Functor for multi-type-parameter GADT:
--- A functor for sized containers over an unsized component. In our
--- case the container is the opcode set and the unsized component is
--- the address type. This is used to replace label references with
--- actual addresses.
-class FunctorMSized (c :: Type -> Nat -> Type) where
+-- Because we cannot derive the usual Haskell classes for multi-type-parameter GADTs, this helps to
+-- map over sized containers that are polymorphic in an unsized type. More specifically, in this
+-- use case:
+--  - the container is the opcode set
+--  - the unsized types are the address type, which is either textual label references, and
+--    resolved literal addresses.
+-- TraversableSized is used used to replace label references with resolved literal addresses.
+-- The opcode datatype should implement this class outside of this library.
+-- TODO: Would it suffice to define a functor-like instance in the application?
+class TraversableSized (c :: Type -> Nat -> Type) where
   mapMSized :: forall (a :: Type) (b :: Type) (n :: Nat) m
             . Applicative m => (a -> m b) -> c a n -> m (c b n)
-
-instance Binary opcode => Binary (Container opcode) where
-  encode Nil          = Prelude.pure Vec.empty
-  encode (Leaf c)     = encode c
-  encode (Tree c1 c2) = (Vec.++) <$> encode c1 Prelude.<*> encode c2
 
 class (Num a, Ord a, Bounded a) => Address a where
 
@@ -203,7 +98,7 @@ data Atom (operation :: Nat -> Type) (n :: Nat) where
   Atom :: operation n -> Atom operation n
   Label :: LabelText  -> Atom operation 0
 
-instance Binary operation => Binary (Atom operation) where
+instance Encode operation => Encode (Atom operation) where
   encode (Atom op) = encode op
   encode (Label _) = Prelude.pure Vec.empty
 

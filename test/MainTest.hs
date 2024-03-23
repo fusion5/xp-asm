@@ -7,6 +7,8 @@ module MainTest where
 import Test.Hspec
 
 import Common
+import Prelude
+import qualified Container
 
 import qualified ASM
 import qualified ASM.Types as ASM
@@ -16,32 +18,25 @@ import qualified Data.Word as Word
 import qualified Data.Text as Text
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.Vector.Sized as Vec
--- import qualified Data.Sequence as Seq
 
-testSeq0 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 0
-testSeq0 = ASM.Nil
+testSeq0 :: Container.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 0
+testSeq0 = Container.empty
 
-testSeq1 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 7
-testSeq1 =
-  ASM.Tree
-    (ASM.Leaf $ ASM.Atom (JumpTo (ASM.RefVA "test")))
-    (ASM.Tree (ASM.Leaf $ ASM.Atom (Literal 0x10)) ASM.Nil)
+testSeq1 :: Container.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 7
+testSeq1
+  = Container.singleton (ASM.Atom (JumpTo (ASM.RefVA "test")))
+      Container.++ Container.singleton (ASM.Atom $ Literal 0x10)
 
-testSeq2 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 0
-testSeq2 =
-  ASM.Tree (ASM.Leaf (ASM.Label "TEST")) ASM.Nil
+testSeq2 :: Container.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 0
+testSeq2 = Container.singleton (ASM.Label "TEST")
 
-testSeq3 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 2
-testSeq3 =
-  ASM.Tree
-    (ASM.Tree (ASM.Leaf $ ASM.Atom (Literal 0x10)) ASM.Nil)
-    ASM.Nil
+testSeq3 :: Container.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 2
+testSeq3 = Container.singleton (ASM.Atom $ Literal 0x10)
 
-testSeq4 :: ASM.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 4
-testSeq4 =
-  ASM.Tree
-    (ASM.Leaf $ ASM.Atom (Literal 0x10))
-    (ASM.Tree (ASM.Leaf $ ASM.Atom $ Literal 0x20) ASM.Nil)
+testSeq4 :: Container.Container (ASM.Atom (Opcode (ASM.Reference ASM.LabelText))) 4
+testSeq4
+  = Container.singleton (ASM.Atom $ Literal 0x10)
+      Container.++ Container.singleton (ASM.Atom $ Literal 0x20)
 
 defaultConfig :: ASM.Config Word.Word32
 defaultConfig = ASM.Config {..}
@@ -60,14 +55,13 @@ errorText :: Text.Text -> a
 errorText = error . Text.unpack
 
 -- Could be in another module, is it possible to do this more efficient?
-
 word32le :: Word32 -> (Word8, Word8, Word8, Word8)
 word32le w32
   = case BS.unpack (Bin.runPut (Bin.putWord32le w32)) of
     [w0, w1, w2, w3] -> (w0, w1, w2, w3)
     _                -> error "internal error"
 
-instance ASM.Binary (Opcode (ASM.Reference Word.Word32)) where
+instance ASM.Encode (Opcode (ASM.Reference Word.Word32)) where
   encode (JumpTo (ASM.RefVA i32)) = do
     pure $ 0x01 `Vec.cons` Vec.fromTuple (word32le i32)
   encode (JumpRelative (ASM.RefForwardOffsetVASolved {..})) = do
@@ -82,7 +76,7 @@ instance ASM.Binary (Opcode (ASM.Reference Word.Word32)) where
 -- Provide code for updating addresses/references in an Applicative context
 -- (in our case Either Exception). This boilerplate is required because
 -- it's not possible to derive instances for Opcode.
-instance ASM.FunctorMSized Opcode where
+instance ASM.TraversableSized Opcode where
   mapMSized f = go
     where
       go (JumpTo ref) = JumpTo <$> f ref
@@ -91,14 +85,29 @@ instance ASM.FunctorMSized Opcode where
 
 instance (ASM.Address Word32)
 
+shouldSatisfyError
+  :: (Show a, HasCallStack)
+  => Either ASM.AssemblyError a -> (ASM.AssemblyError -> Bool) -> Expectation
+shouldSatisfyError (Left e) p = e `shouldSatisfy` p
+shouldSatisfyError (Right x) _ = expectationFailure $ "Expecting an error, got: " ++ show x
+
+shouldBeSuccess
+  :: (Show a, Eq a, HasCallStack)
+  => Either ASM.AssemblyError a -> a -> Expectation
+shouldBeSuccess (Left e) _ = expectationFailure $ "Expecting success, got error: " ++ show e
+shouldBeSuccess (Right x) y = x `shouldBe` y
+
+isReferenceMissing :: Text.Text -> ASM.AssemblyError -> Bool
+isReferenceMissing expected (ASM.ReferenceMissing got) = expected == got
+isReferenceMissing _ _ = False
+
 main :: IO ()
 main = hspec $ do
   it "Empty list assembly returns an empty BS" $
-    ASM.assemble defaultConfig testSeq0 `shouldBe` Right ""
+    ASM.assemble defaultConfig testSeq0 `shouldBeSuccess` ""
   it "Undefined reference should result in an error" $
-    ASM.assemble defaultConfig testSeq1 `shouldBe` Left (ASM.ReferenceMissing "test")
+    ASM.assemble defaultConfig testSeq1 `shouldSatisfyError` isReferenceMissing "test"
   it "A sequence of 1 opcode results in a sequence of bytes" $
-    ASM.assemble defaultConfig testSeq3 `shouldBe` Right "\x03\x10"
+    ASM.assemble defaultConfig testSeq3 `shouldBeSuccess` "\x03\x10"
   it "A sequence of 2 opcodes results in a sequence of bytes" $
-    ASM.assemble defaultConfig testSeq4 `shouldBe` Right "\x03\x10\x03\x20"
-
+    ASM.assemble defaultConfig testSeq4 `shouldBeSuccess` "\x03\x10\x03\x20"

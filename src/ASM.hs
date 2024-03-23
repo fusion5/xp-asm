@@ -12,6 +12,8 @@ module ASM
   ) where
 
 import Common
+import Prelude
+import Container
 
 import ASM.Types
 
@@ -28,7 +30,7 @@ import qualified Data.Vector.Sized as Vec
 --  2. replace labels with the required references by using the map from (1) (solveReferences)
 --
 -- The module is polymorphic on a data type typically denotated with 'op', which implements
--- type class 'Binary'. Values of this datatype in a sequence are elements that
+-- type class 'Encode'. Values of this datatype in a sequence are elements that
 -- can be converted to a binary format. The module facilitates outputting several types of
 -- references to other 'op' elements in the sequence by means of the 'Reference' typ.
 
@@ -64,13 +66,13 @@ scanLabels s
 
 -- TODO: Consider doing this without the external dependency (BoundedArithmetic)
 safePlus :: (Address a) => a -> a -> Either AssemblyError a
-safePlus = boundedBinopMapEx (Arithmetic . SEW) B.plusBounded
+safePlus = boundedBinopMapEx Arithmetic B.plusBounded
 
 safeMinus :: (Address a) => a -> a -> Either AssemblyError a
-safeMinus = boundedBinopMapEx (Arithmetic . SEW) B.plusBounded
+safeMinus = boundedBinopMapEx Arithmetic B.plusBounded
 
 safeDowncast :: (Integral a, Bounded a) => Integer -> Either AssemblyError a
-safeDowncast = Either.mapLeft (Arithmetic . SEW) . B.fromIntegerBounded
+safeDowncast = Either.mapLeft Arithmetic . B.fromIntegerBounded
 
 scanAtom
   ::
@@ -104,7 +106,7 @@ scanAtom s@StateLabelScan {..} = go
 solveReferences
   ::
   ( Address address
-  , FunctorMSized op
+  , TraversableSized op
   , KnownNat n
   )
   => Config address
@@ -115,7 +117,7 @@ solveReferences c labelDictionary s
     = asrsAtoms <$> foldMContainer (FoldCallback $ solveAtomReference c labelDictionary) initialState s
   where
     initialState = StateReferenceSolve
-      { asrsAtoms = Nil
+      { asrsAtoms = empty
       , asrsRelativeVAOffset = 0
       }
 
@@ -123,7 +125,7 @@ solveAtomReference
   :: ( Address address
      , KnownNat n1
      , KnownNat n2
-     , FunctorMSized op
+     , TraversableSized op
      )
   => Config address
   -> Map.Map LabelText (AddressInfo address)
@@ -138,7 +140,7 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..}
       let width = natVal op
       newRVA <- fromIntegral width `safePlus` asrsRelativeVAOffset
       pure s
-        { asrsAtoms = Tree (Leaf newOp) asrsAtoms
+        { asrsAtoms = singleton newOp Container.++ asrsAtoms
         , asrsRelativeVAOffset = newRVA
         }
     go _label@(Label _) = pure s
@@ -169,9 +171,9 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..}
 assemble
   ::
   ( Address address
-  , Binary (op (Reference address))
+  , Encode (op (Reference address))
   , KnownNat n
-  , FunctorMSized op
+  , TraversableSized op
   )
   => Config address
   -> Container (Atom (op (Reference LabelText))) n
