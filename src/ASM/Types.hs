@@ -12,7 +12,11 @@ import qualified Control.Exception as Exception
 data AssemblyError
   = Arithmetic SomeExceptionWrap
   | ReferenceMissing LabelText
-  | FromLabelAfterTo
+  | -- | In a calculated label difference value that gives the number of bytes
+    -- between the "From" label and the "To" label, the result must be
+    -- positive, therefore the "From" label must be defined before the "To"
+    -- label.
+    FromLabelAfterTo
   | ReferenceTypeNotSupportedInOpcode Text.Text
   | OpcodeToByteString AssemblyError
   | InternalError Text.Text
@@ -22,7 +26,9 @@ instance Exception.Exception AssemblyError
 
 newtype SomeExceptionWrap = SEW Exception.SomeException deriving (Show)
 
--- Defining a manual instance because SomeException doesn't make it possible to derive
+-- | Defining a manual instance because SomeException doesn't make it possible
+-- to derive Eq. This is a solution to the problem of checking for Exceptions
+-- in unit tests.
 instance Eq SomeExceptionWrap where
   (SEW se1) == (SEW se2) = show se1 == show se2
 
@@ -39,13 +45,16 @@ class ToWord8s a where
 instance ToWord8s a => ToWord8s (Seq.Seq a) where
   toWord8s as = join <$> mapM toWord8s as
 
+-- | Memory / program addresses have certain constraints
 class (Num a, Ord a, Bounded a) => Address a where
 
 data AddressInfo address
   = AddressInfo
-  { -- TODO: document
+  { -- | Image Address e.g. of a label (in-file address, offset from the
+    -- beginning of the file)
     aiIA  :: address
-  , -- TODO: document
+  , -- | Relative Virtual Address e.g. of a label (in-memory address minus
+    -- image base address)
     aiRelativeVA :: address
   }
 
@@ -58,7 +67,7 @@ data Reference address
   | -- | Relative Virtual Address (in-memory address minus image base
     -- address) of label
     RefRelativeVA address
-  | -- | Image Address (in-file address, offset from the beginning of)
+  | -- | Image Address (in-file address, offset from the beginning of
     -- the file) of label
     RefIA address
   | -- | Offset to another label's Virtual Address from the Virtual Address of
@@ -82,11 +91,15 @@ data Reference address
       }
   deriving (Show)
 
--- | The operation type is a subset of the instruction set, e.g. for x86 jmp, mov, etc.
--- It is polymorphic in the representation of address references.
+-- | An Atom is either an operation (typically called opcode) or a label.
 data Atom operation
-  = AOp operation
-  | ALabel LabelText
+  = -- | The operation type is a subset of the instruction set, e.g. for x86
+    -- jmp, mov, etc. which can be polymorphic in the representation of
+    -- address references
+    AOp operation
+  | -- | A Label helps to refer to the program point where it is included
+    -- by name
+    ALabel LabelText
   deriving (Show, Eq, Generic)
 
 instance ToWord8s operation => ToWord8s (Atom operation) where
@@ -100,7 +113,8 @@ data Config address
       acVirtualBaseAddress :: address
     }
 
--- | The state of the label scanner
+-- | The label scanner traverses the program and builds a Map of labels it
+-- encountered and their address information. This is its state
 data StateLabelScan address
   = StateLabelScan
     { -- | Current offset in generated image file (from the beginning)
@@ -113,11 +127,12 @@ data StateLabelScan address
     , aslsRelativeVAOffset :: address
       -- | Unique label name generator counter
       -- , asUID :: Integer
-      -- | Encountered labels
+      -- | Encountered labels so far
     , aslsLabels :: Map.Map LabelText (AddressInfo address)
     }
 
--- | The state of the reference solver
+-- | The reference solver uses the Map of labels and their address information
+-- to solve references to labels. this is its state
 data StateReferenceSolve op address
   = StateReferenceSolve
     { asrsAtoms :: Seq.Seq (Atom (op (Reference address)))

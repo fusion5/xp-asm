@@ -90,9 +90,9 @@ scanAtom s@StateLabelScan {..} = go
         aslsLabels = Map.insert labelText (AddressInfo {..}) aslsLabels
       }
 
--- Solve label references to dictionary addresses. Again we keep track of the offset we are at
--- like in scanLabels. Perhaps this duplicate operation could be factored out, but it shouldn't
--- be too expensive...
+-- | Solve label references to dictionary addresses. Again it keeps track of
+-- the offset it is at like in scanLabels. Perhaps this duplicate operation
+-- could be factored out, but it shouldn't be too expensive...
 solveReferences
   :: (Traversable op, Address address, ByteSized (op (Reference LabelText)))
   => Config address
@@ -107,6 +107,7 @@ solveReferences c labelDictionary s
       , asrsRelativeVAOffset = 0
       }
 
+-- | Solve references possibly present in an Atom
 solveAtomReference
   :: (Traversable op, Address address, ByteSized (op (Reference LabelText)))
   => Config address
