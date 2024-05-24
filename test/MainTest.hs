@@ -24,7 +24,8 @@ data TestOpcode address
   deriving (Show, Eq, Functor, Foldable, Traversable, Generic)
 
 -- | Warning, this should match the Encodable lengths...
--- TODO: Why not merge ByteSized and Encodable?
+-- ByteSized and Encodable are separate to reflect that label references are of
+-- known size, but their encoding is not obtainable until resolved
 instance ByteSized (TestOpcode a) where
   sizeof (JumpTo _)       = 1 + 4
   sizeof (JumpRelative _) = 1 + 1
