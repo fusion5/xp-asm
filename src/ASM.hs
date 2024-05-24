@@ -141,14 +141,13 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go
       RefIA . aiIA <$> query labelText
     solveReference currentRVA (RefForwardOffsetVA labelText) = do
       targetRVA <- aiRelativeVA <$> query labelText
-      pure $ RefForwardOffsetVASolved currentRVA targetRVA
-    solveReference _ (RefLabelDifferenceIA {..}) = do
-      aFrom <- aiIA <$> query difiaFrom
-      aTo   <- aiIA <$> query difiaTo
-      when (aFrom > aTo) $ Left FromLabelAfterTo
-      pure $ RefLabelDifferenceIA aFrom aTo
-    solveReference _ (RefForwardOffsetVASolved {}) =
-      Left $ InternalError "Received already solved VA to solve"
+      RefForwardOffsetVA <$> currentRVA `safeMinus` targetRVA
+      -- pure $ RefForwardOffsetVASolved currentRVA targetRVA
+    -- solveReference _ (RefLabelDifferenceIA {..}) = do
+    --   aFrom <- aiIA <$> query difiaFrom
+    --   aTo   <- aiIA <$> query difiaTo
+    --   when (aFrom > aTo) $ Left FromLabelAfterTo
+    --   pure $ RefLabelDifferenceIA aFrom aTo
 
 assemble
   ::

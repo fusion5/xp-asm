@@ -45,6 +45,12 @@ class Encodable a where
 instance Encodable a => Encodable (Seq.Seq a) where
   encode as = join <$> mapM encode as
 
+instance Encodable address => Encodable (Reference address) where
+  encode (RefVA address)              = encode address
+  encode (RefRelativeVA address)      = encode address
+  encode (RefIA address)              = encode address
+  encode (RefForwardOffsetVA address) = encode address
+
 -- | Memory / program addresses have certain constraints
 class (Num a, Ord a, Bounded a) => Address a where
 
@@ -71,24 +77,27 @@ data Reference address
     -- the file) of label
     RefIA address
   | -- | Offset to another label's Virtual Address from the Virtual Address of
-    -- the referrer begin location. A signed value. Used for relative jumps. If positive
-    -- then the target is below. If negative then the target is above. For x64 note that
-    -- you are interested in the offset relative to the referrer END location, so you will
-    -- have to add the width of the reference.
+    -- the referrer begin Virtual Address. A signed value. Used for relative
+    -- jumps. If positive then the target is below. If negative then the
+    -- target is above. For x64 note that you are interested in the offset
+    -- relative to the referrer END location, so you will have to add the
+    -- width of the reference.
     RefForwardOffsetVA address
-  | RefForwardOffsetVASolved
-      { refCurrentVA :: address -- From just after the reference
-      , refTargetVA  :: address
-      }
-  | -- | The unsigned offset from the first label Image Address to the
+  -- | -- TODO: why is this needed, why delay the computation?
+  --   RefForwardOffsetVASolved
+  --     { refCurrentVA :: address -- From just after the reference
+  --     , refTargetVA  :: address
+  --     }
+    -- | The unsigned offset from the first label Image Address to the
     -- second one: the first label must be <= than the second one and
     -- the delta must fit the given Size (this is to be error-checked
     -- at run time). Helps to define executable file values.
-    -- TODO: Couldn't we convert this to the delta between the current pos and a label?
-    RefLabelDifferenceIA
-      { difiaFrom :: address
-      , difiaTo   :: address
-      }
+    -- Note: Commented out because this can probaby be obtained by subtracting
+    -- two RefVAs
+    -- | RefLabelDifferenceIA
+    --   { difiaFrom :: address
+    --   , difiaTo   :: address
+    --   }
   deriving (Show)
 
 -- | An Atom is either an operation (typically called opcode) or a label.
