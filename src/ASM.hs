@@ -155,7 +155,7 @@ assemble
   ( Address address
   , Traversable op
   , ByteSized (op (Reference LabelText))
-  , ToWord8s (op (Reference address))
+  , Encodable (op (Reference address))
   )
   => Config address
   -> Seq.Seq (Atom (op (Reference LabelText)))
@@ -163,7 +163,7 @@ assemble
 assemble cfg input = do
   labelMap <- scanLabels input
   solvedReferences <- solveReferences cfg labelMap input
-  inlined <- toWord8s solvedReferences
+  inlined <- encode solvedReferences
   pure $ toByteString inlined
   where
     toByteString = BS.pack . F.toList

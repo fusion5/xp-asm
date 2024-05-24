@@ -39,11 +39,11 @@ class ByteSized a where
   sizeof :: a -> Int.Int64
 
 -- | Because the Binary class doesn't easily allow nice error handling.
-class ToWord8s a where
-  toWord8s :: a -> Either AssemblyError (Seq.Seq Word8)
+class Encodable a where
+  encode :: a -> Either AssemblyError (Seq.Seq Word8)
 
-instance ToWord8s a => ToWord8s (Seq.Seq a) where
-  toWord8s as = join <$> mapM toWord8s as
+instance Encodable a => Encodable (Seq.Seq a) where
+  encode as = join <$> mapM encode as
 
 -- | Memory / program addresses have certain constraints
 class (Num a, Ord a, Bounded a) => Address a where
@@ -102,9 +102,9 @@ data Atom operation
     ALabel LabelText
   deriving (Show, Eq, Generic)
 
-instance ToWord8s operation => ToWord8s (Atom operation) where
-  toWord8s (AOp op)   = toWord8s op
-  toWord8s (ALabel _) = pure mempty
+instance Encodable operation => Encodable (Atom operation) where
+  encode (AOp op)   = encode op
+  encode (ALabel _) = pure mempty
 
 -- | Constant parameters for the assembler.
 data Config address
