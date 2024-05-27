@@ -1,13 +1,17 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+
 module ASM.Types where
 
 import Common
 
-import qualified Data.Text as Text
+import qualified Control.Exception as Exception
+import qualified Data.ByteString.Lazy as BS
+import qualified Data.Int as Int
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
-import qualified Data.Int as Int
-import qualified Control.Exception as Exception
+import qualified Data.Text as Text
 
 data AssemblyError
   = Arithmetic SomeExceptionWrap
@@ -38,21 +42,16 @@ type LabelText = Text.Text
 class ByteSized a where
   sizeof :: a -> Int.Int64
 
--- | Because the Binary class doesn't easily allow nice error handling.
-class Encodable a where
-  encode :: a -> Either AssemblyError (Seq.Seq Word8)
-
-instance Encodable a => Encodable (Seq.Seq a) where
-  encode as = join <$> mapM encode as
-
-instance Encodable address => Encodable (Reference address) where
-  encode (RefVA address)              = encode address
-  encode (RefRelativeVA address)      = encode address
-  encode (RefIA address)              = encode address
-  encode (RefForwardOffsetVA address) = encode address
+-- | Define the encoding of opcodes outside of the library.
+-- | Why not use the Binary class? It doesn't easily allow nice error handling.
+class Encodable address a where
+  encode
+    :: AddressInfo address -- position, needed to compute certain offsets
+    -> a -- what to encode
+    -> Either AssemblyError (Seq.Seq Word8)
 
 -- | Memory / program addresses have certain constraints
-class (Num a, Ord a, Bounded a) => Address a where
+class (Integral a, Ord a, Bounded a) => Address a where
 
 data AddressInfo address
   = AddressInfo
@@ -64,41 +63,23 @@ data AddressInfo address
     aiRelativeVA :: address
   }
 
--- | Referrer --- reference --> Referree
--- The type of references defined here must cover the needs of all assemblers
--- defined using ASM.
-data Reference address
+-- The type of references and solved references defined here must cover the
+-- needs of all assemblers defined using ASM.
+data Reference
   = -- | Virtual Address (in-memory address) of label
-    RefVA address
+    RefVA LabelText
   | -- | Relative Virtual Address (in-memory address minus image base
     -- address) of label
-    RefRelativeVA address
+    RefRelativeVA LabelText
   | -- | Image Address (in-file address, offset from the beginning of
     -- the file) of label
-    RefIA address
-  | -- | Offset to another label's Virtual Address from the Virtual Address of
-    -- the referrer begin Virtual Address. A signed value. Used for relative
-    -- jumps. If positive then the target is below. If negative then the
-    -- target is above. For x64 note that you are interested in the offset
-    -- relative to the referrer END location, so you will have to add the
-    -- width of the reference.
-    RefForwardOffsetVA address
-  -- | -- TODO: why is this needed, why delay the computation?
-  --   RefForwardOffsetVASolved
-  --     { refCurrentVA :: address -- From just after the reference
-  --     , refTargetVA  :: address
-  --     }
-    -- | The unsigned offset from the first label Image Address to the
-    -- second one: the first label must be <= than the second one and
-    -- the delta must fit the given Size (this is to be error-checked
-    -- at run time). Helps to define executable file values.
-    -- Note: Commented out because this can probaby be obtained by subtracting
-    -- two RefVAs
-    -- | RefLabelDifferenceIA
-    --   { difiaFrom :: address
-    --   , difiaTo   :: address
-    --   }
+    RefIA LabelText
   deriving (Show)
+
+data SolvedReference address
+  = SolvedIA address
+  | SolvedRelativeVA address
+  | SolvedVA address
 
 -- | An Atom is either an operation (typically called opcode) or a label.
 data Atom operation
@@ -111,9 +92,10 @@ data Atom operation
     ALabel LabelText
   deriving (Show, Eq, Generic)
 
-instance Encodable operation => Encodable (Atom operation) where
-  encode (AOp op)   = encode op
-  encode (ALabel _) = pure mempty
+instance Encodable address operation => Encodable address (Atom operation)
+  where
+    encode addressInfo (AOp op)   = encode addressInfo op
+    encode _           (ALabel _) = pure mempty
 
 -- | Constant parameters for the assembler.
 data Config address
@@ -144,6 +126,12 @@ data StateLabelScan address
 -- to solve references to labels. this is its state
 data StateReferenceSolve op address
   = StateReferenceSolve
-    { asrsAtoms :: Seq.Seq (Atom (op (Reference address)))
+    { asrsAtoms :: Seq.Seq (Atom (op (SolvedReference address)))
     , asrsRelativeVAOffset :: address
+    }
+
+data StateEncodeSolved address
+  = StateEncodeSolved
+    { sesAddressInfo :: AddressInfo address
+    , sesEncoded     :: BS.ByteString
     }
