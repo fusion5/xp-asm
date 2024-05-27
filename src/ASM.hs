@@ -60,8 +60,8 @@ scanLabels atoms = aslsLabels <$> foldM scan initialState atoms
       , aslsLabels = Map.empty
       }
     scan s@StateLabelScan {..} (AOp op) = do
-      newIA  <- operationWidth op `safePlus` aslsIAOffset
-      newRVA <- operationWidth op `safePlus` aslsRelativeVAOffset
+      newIA  <- (fromIntegral . sizeIA)  op `safePlus` aslsIAOffset
+      newRVA <- (fromIntegral . sizeRVA) op `safePlus` aslsRelativeVAOffset
       pure s
         { aslsIAOffset         = newIA
         , aslsRelativeVAOffset = newRVA
@@ -82,10 +82,6 @@ safeMinus = boundedBinopMapEx (Arithmetic . SEW) B.minusBounded
 
 safeDowncast :: (Integral a, Bounded a) => Integer -> Either AssemblyError a
 safeDowncast = Either.mapLeft (Arithmetic . SEW) . B.fromIntegerBounded
-
--- This might be expensive...
-operationWidth :: (Num address, ByteSized op) => op -> address
-operationWidth = fromIntegral . sizeof
 
 -- | Solve label references to dictionary addresses. Again it keeps track of
 -- the offset it is at like in scanLabels. Perhaps this duplicate operation
@@ -118,7 +114,7 @@ solveAtomReferences Config {..} labelDictionary s@StateReferenceSolve {..} = go
     go (AOp opUnsolved) = do
       opSolved <- AOp <$> Prelude.mapM (solveReference asrsRelativeVAOffset)
         opUnsolved
-      newRVA <- operationWidth opUnsolved `safePlus` asrsRelativeVAOffset
+      newRVA <- (fromIntegral . sizeRVA) opUnsolved `safePlus` asrsRelativeVAOffset
       pure s
         { asrsAtoms = asrsAtoms Seq.|> opSolved
         , asrsRelativeVAOffset = newRVA
@@ -130,6 +126,7 @@ solveAtomReferences Config {..} labelDictionary s@StateReferenceSolve {..} = go
           (ReferenceMissing labelText)
           (Map.lookup labelText labelDictionary)
 
+    -- TODO: Save the first parameter somewhere...
     solveReference _ (RefVA labelText) = do
       rva <- aiRelativeVA <$> query labelText
       SolvedVA <$> rva `safePlus` acVirtualBaseAddress

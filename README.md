@@ -30,5 +30,13 @@ Complete undefined `encodeSolved` function in ASM.hs
 Refactor 'Reference' type
     OK
 
+Add tests with prefix
+    OK
+
+Add/test objects that add to RVA but not to IA
+    OK
+
 *** Activity stack
 
+Add test and functionality to compute a relative (signed) offset from the 
+current position to a label

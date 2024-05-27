@@ -38,7 +38,8 @@ type LabelText = Text.Text
 
 -- TODO: consider Foreign.Storable, add the 'alignment' method
 class ByteSized a where
-  sizeof :: a -> Int.Int64
+  sizeIA  :: a -> Int.Int64
+  sizeRVA :: a -> Int.Int64
 
 -- | Define the encoding of opcodes outside of the library.
 -- | Why not use the Binary class? It doesn't easily allow nice error handling.

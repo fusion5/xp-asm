@@ -20,6 +20,7 @@ import qualified Data.ByteString.Lazy as BS
 data TestOpcode address
   = JumpTo address
   | Noop
+  | IAOffset16
   deriving (Show, Eq, Functor, Foldable, Traversable, Generic)
 
 data BSByteShow = BSByteShow BS.ByteString deriving (Eq)
@@ -31,8 +32,13 @@ instance Show BSByteShow where
 -- ByteSized and Encodable are separate to reflect that label references are of
 -- known size, but their encoding is not obtainable until resolved
 instance ByteSized (TestOpcode a) where
-  sizeof (JumpTo _)       = 1 + 4
-  sizeof Noop             = 2
+  sizeRVA (JumpTo _) = 1 + 4
+  sizeRVA Noop       = 2
+  sizeRVA IAOffset16 = 0
+
+  sizeIA (JumpTo _)  = 1 + 4
+  sizeIA Noop        = 2
+  sizeIA IAOffset16  = 16
 
 instance Address Word32
 
@@ -51,6 +57,8 @@ instance Encodable (TestOpcode (SolvedReference Word32)) where
       pure $ Seq.singleton 0x01 <> addr
   encode _addressInfo Noop
     = pure $ Seq.fromList [0x03, 0x03]
+  encode _addressInfo IAOffset16
+    = pure Seq.empty
 
 defaultConfig :: Config Word.Word32
 defaultConfig = Config {..}
@@ -63,24 +71,79 @@ main = hspec $
     it "Empty list assembly returns no bytes" $
       assembleAtoms []
         `shouldBe` Right ""
+
     it "Label should not generate any bytes" $
       assembleAtoms [ALabel "l"]
         `shouldBe` Right ""
+
     it "Undefined reference returns an error" $
       assembleAtoms [AOp (JumpTo (RefVA "missing"))]
         `shouldBe` Left (ReferenceMissing "missing")
+
     it "Address encoding is 32 bit Little Endian" $
       encode (AddressInfo (0 :: Word32) (0 :: Word32)) (0x100 :: Word32)
         `shouldBe` Right (Seq.fromList [0x00, 0x01, 0x00, 0x00])
+
     it "A RefVA reference should return the virtual address 0x100 for top" $
-      assembleAtoms [ALabel "top", AOp (JumpTo (RefVA "top"))]
+      assembleAtoms
+        [ ALabel "top"
+        , AOp (JumpTo (RefVA "top"))
+        ]
         `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x01, 0x00, 0x00])
+
+    it "A RefVA reference should return the virtual address 0x102 in the middle" $
+      assembleAtoms
+        [ AOp Noop
+        , ALabel "top"
+        , AOp (JumpTo (RefVA "top"))
+        ]
+        `shouldBeBS` Right (BS.pack [0x03, 0x03, 0x01, 0x02, 0x01, 0x00, 0x00])
+
+    it "A RefVA reference should return the virtual address 0x107 at the end" $
+      assembleAtoms
+        [ AOp (JumpTo (RefVA "bottom"))
+        , AOp Noop
+        , ALabel "bottom"
+        ]
+        `shouldBeBS` Right (BS.pack [0x01, 0x07, 0x01, 0x00, 0x00, 0x03, 0x03])
+
     it "A RefRelativeVA reference should return 0 for top" $
-      assembleAtoms [ALabel "top", AOp (JumpTo (RefRelativeVA "top"))]
+      assembleAtoms
+        [ ALabel "top"
+        , AOp (JumpTo (RefRelativeVA "top"))
+        ]
         `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x00, 0x00, 0x00])
+
+    it "A RefRelativeVA reference should return 0 for bottom" $
+      assembleAtoms
+        [ AOp (JumpTo (RefRelativeVA "bottom"))
+        , ALabel "bottom"
+        ]
+        `shouldBeBS` Right (BS.pack [0x01, 0x05, 0x00, 0x00, 0x00])
+
     it "A RefIA reference should return 0 for top" $
-      assembleAtoms [ALabel "top", AOp (JumpTo (RefIA "top"))]
+      assembleAtoms
+        [ ALabel "top"
+        , AOp (JumpTo (RefIA "top"))
+        ]
         `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x00, 0x00, 0x00])
+
+    it "A RefIA reference should be affected by an Image Address offset" $
+      assembleAtoms
+        [ AOp IAOffset16
+        , ALabel "top"
+        , AOp (JumpTo (RefIA "top"))
+        ]
+        `shouldBeBS` Right (BS.pack [0x01, 0x10, 0x00, 0x00, 0x00])
+
+    it "A RefRVA reference should not be affected by an Image Address offset" $
+      assembleAtoms
+        [ AOp IAOffset16
+        , ALabel "top"
+        , AOp (JumpTo (RefRelativeVA "top"))
+        ]
+        `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x00, 0x00, 0x00])
+
   where
     -- Wraps the bytestring to produce different show output
     shouldBeBS
