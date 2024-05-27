@@ -65,14 +65,14 @@ data AddressInfo address
 -- The type of references and solved references defined here must cover the
 -- needs of all assemblers defined using ASM.
 data Reference
-  = -- | Virtual Address (in-memory address) of label
-    RefVA LabelText
+  = -- | Image Address (in-file address, offset from the beginning of
+    -- the file) of label
+    RefIA LabelText
   | -- | Relative Virtual Address (in-memory address minus image base
     -- address) of label
     RefRelativeVA LabelText
-  | -- | Image Address (in-file address, offset from the beginning of
-    -- the file) of label
-    RefIA LabelText
+  | -- | Virtual Address (in-memory address) of label
+    RefVA LabelText
   deriving (Show)
 
 data SolvedReference address

@@ -52,13 +52,27 @@ scanLabels
   )
   => Seq.Seq (Atom (op Reference))
   -> Either AssemblyError (Map.Map LabelText (AddressInfo address))
-scanLabels s = aslsLabels <$> foldM scanAtom initialState s
+scanLabels atoms = aslsLabels <$> foldM scan initialState atoms
   where
     initialState = StateLabelScan
       { aslsIAOffset = 0
       , aslsRelativeVAOffset = 0
       , aslsLabels = Map.empty
       }
+    scan s@StateLabelScan {..} (AOp op) = do
+      newIA  <- operationWidth op `safePlus` aslsIAOffset
+      newRVA <- operationWidth op `safePlus` aslsRelativeVAOffset
+      pure s
+        { aslsIAOffset         = newIA
+        , aslsRelativeVAOffset = newRVA
+        }
+    scan s@StateLabelScan {..} (ALabel labelText) =
+      let
+        aiIA         = aslsIAOffset
+        aiRelativeVA = aslsRelativeVAOffset
+      in pure s
+        { aslsLabels = Map.insert labelText (AddressInfo {..}) aslsLabels
+        }
 
 safePlus :: (Address a) => a -> a -> Either AssemblyError a
 safePlus = boundedBinopMapEx (Arithmetic . SEW) B.plusBounded
@@ -73,28 +87,6 @@ safeDowncast = Either.mapLeft (Arithmetic . SEW) . B.fromIntegerBounded
 operationWidth :: (Num address, ByteSized op) => op -> address
 operationWidth = fromIntegral . sizeof
 
-scanAtom
-  :: (ByteSized ops, Address address)
-  => StateLabelScan address
-  -> Atom ops
-  -> Either AssemblyError (StateLabelScan address)
-scanAtom s@StateLabelScan {..} = go
-  where
-    go (AOp op) = do
-        newIA  <- operationWidth op `safePlus` aslsIAOffset
-        newRVA <- operationWidth op `safePlus` aslsRelativeVAOffset
-        pure s
-          { aslsIAOffset         = newIA
-          , aslsRelativeVAOffset = newRVA
-          }
-    go (ALabel labelText) =
-      let
-        aiIA         = aslsIAOffset
-        aiRelativeVA = aslsRelativeVAOffset
-      in pure s
-        { aslsLabels = Map.insert labelText (AddressInfo {..}) aslsLabels
-        }
-
 -- | Solve label references to dictionary addresses. Again it keeps track of
 -- the offset it is at like in scanLabels. Perhaps this duplicate operation
 -- could be factored out, but it shouldn't be too expensive...
@@ -105,7 +97,7 @@ solveReferences
   -> Seq.Seq (Atom (op Reference))
   -> Either AssemblyError (Seq.Seq (Atom (op (SolvedReference address))))
 solveReferences c labelDictionary atoms
-    = asrsAtoms <$> foldM (solveAtomReference c labelDictionary) initialState
+    = asrsAtoms <$> foldM (solveAtomReferences c labelDictionary) initialState
         atoms
   where
     initialState = StateReferenceSolve
@@ -114,14 +106,14 @@ solveReferences c labelDictionary atoms
       }
 
 -- | Solve references possibly present in an Atom
-solveAtomReference
+solveAtomReferences
   :: (Traversable op, Address address, ByteSized (op Reference))
   => Config address
   -> Map.Map LabelText (AddressInfo address)
   -> StateReferenceSolve op address
   -> Atom (op Reference)
   -> Either AssemblyError (StateReferenceSolve op address)
-solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go
+solveAtomReferences Config {..} labelDictionary s@StateReferenceSolve {..} = go
   where
     go (AOp opUnsolved) = do
       opSolved <- AOp <$> Prelude.mapM (solveReference asrsRelativeVAOffset)
