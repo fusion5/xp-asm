@@ -1,7 +1,6 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 
 module MainTest where
 
@@ -37,15 +36,15 @@ instance ByteSized (TestOpcode a) where
 
 instance Address Word32
 
-instance Encodable Word32 Word32 where
+instance Encodable Word32 where
   encode _ = pure . Seq.fromList . BS.unpack . Bin.runPut . Bin.putWord32le . fromIntegral
 
-instance Encodable Word32 (SolvedReference Word32) where
+instance Encodable (SolvedReference Word32) where
   encode addressInfo (SolvedIA addr)         = encode addressInfo addr
   encode addressInfo (SolvedRelativeVA addr) = encode addressInfo addr
   encode addressInfo (SolvedVA addr)         = encode addressInfo addr
 
-instance Encodable Word32 (TestOpcode (SolvedReference Word32)) where
+instance Encodable (TestOpcode (SolvedReference Word32)) where
   encode addressInfo (JumpTo ref)
     = do
       addr <- encode addressInfo ref

@@ -1,6 +1,4 @@
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleInstances #-}
 
 module ASM.Types where
 
@@ -44,9 +42,10 @@ class ByteSized a where
 
 -- | Define the encoding of opcodes outside of the library.
 -- | Why not use the Binary class? It doesn't easily allow nice error handling.
-class Encodable address a where
+class Encodable a where
   encode
-    :: AddressInfo address -- position, needed to compute certain offsets
+    :: Address address
+    => AddressInfo address -- position, needed to compute certain offsets
     -> a -- what to encode
     -> Either AssemblyError (Seq.Seq Word8)
 
@@ -92,7 +91,7 @@ data Atom operation
     ALabel LabelText
   deriving (Show, Eq, Generic)
 
-instance Encodable address operation => Encodable address (Atom operation)
+instance Encodable operation => Encodable (Atom operation)
   where
     encode addressInfo (AOp op)   = encode addressInfo op
     encode _           (ALabel _) = pure mempty

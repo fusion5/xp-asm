@@ -1,4 +1,3 @@
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module ASM
@@ -151,7 +150,7 @@ solveAtomReference Config {..} labelDictionary s@StateReferenceSolve {..} = go
 encodeSolved
   :: forall op address
   .  ( Address address
-     , Encodable address (op (SolvedReference address)))
+     , Encodable (op (SolvedReference address)))
   => Config address
   -> Seq.Seq (Atom (op (SolvedReference address)))
   -> Either AssemblyError BS.ByteString
@@ -182,7 +181,7 @@ assemble
   ( Address address
   , Traversable op
   , ByteSized (op Reference)
-  , Encodable address (op (SolvedReference address))
+  , Encodable (op (SolvedReference address))
   )
   => Config address
   -> Seq.Seq (Atom (op Reference))
