@@ -21,7 +21,7 @@ data TestOpcode address
   = JumpAbsolute address
   | JumpRelative address
   | Noop
-  | IAOffset16
+  | IAOffset Int64
   deriving (Show, Eq, Functor, Foldable, Traversable, Generic)
 
 newtype BSByteShow = BSByteShow BS.ByteString deriving (Eq)
@@ -35,13 +35,13 @@ instance Show BSByteShow where
 instance ByteSized TestOpcode where
   sizeRVA (JumpAbsolute _) = 1 + 4
   sizeRVA (JumpRelative _) = 1 + 1
-  sizeRVA Noop       = 2
-  sizeRVA IAOffset16 = 0
+  sizeRVA Noop         = 2
+  sizeRVA (IAOffset _) = 0
 
   sizeIA (JumpAbsolute _)  = 1 + 4
   sizeIA (JumpRelative _)  = 1 + 1
-  sizeIA Noop        = 2
-  sizeIA IAOffset16  = 16
+  sizeIA Noop         = 2
+  sizeIA (IAOffset n) = n
 
 instance Address Word32
 
@@ -91,7 +91,7 @@ instance Encodable (TestOpcode (SolvedReference Word32)) where
       pure $ Seq.singleton 0x02 <> addr
   encode _addressInfo Noop
     = pure $ Seq.fromList [0x03, 0x03]
-  encode _addressInfo IAOffset16
+  encode _addressInfo (IAOffset _)
     = pure Seq.empty
 
 defaultConfig :: Config Word32
@@ -169,7 +169,7 @@ main = hspec $
 
     it "A RefIA reference should be affected by an Image Address offset" $
       assembleAtoms
-        [ AOp IAOffset16
+        [ AOp (IAOffset 16)
         , ALabel "top"
         , AOp (JumpAbsolute (RefIA "top"))
         ]
@@ -177,7 +177,7 @@ main = hspec $
 
     it "A RefRVA reference should not be affected by an Image Address offset" $
       assembleAtoms
-        [ AOp IAOffset16
+        [ AOp (IAOffset 16)
         , ALabel "top"
         , AOp (JumpAbsolute (RefRelativeVA "top"))
         ]
@@ -185,7 +185,7 @@ main = hspec $
 
     it "A RefVA reference should not be affected by an Image Address offset" $
       assembleAtoms
-        [ AOp IAOffset16
+        [ AOp (IAOffset 16)
         , ALabel "top"
         , AOp (JumpAbsolute (RefVA "top"))
         ]
@@ -194,7 +194,7 @@ main = hspec $
     it "Relative backwards image reference should be -16" $
       assembleAtoms
         [ ALabel "top"
-        , AOp IAOffset16
+        , AOp (IAOffset 16)
         , AOp (JumpRelative (RefIA "top"))
         ]
         `shouldBeBytes` [0x02, 0xF0]
@@ -203,7 +203,7 @@ main = hspec $
       assembleAtoms
         [ -- Relative reference point is before the instruction
           AOp (JumpRelative (RefIA "bottom")) -- Adds 2 (jump instruction width)
-        , AOp IAOffset16 -- Adds 16
+        , AOp (IAOffset 16) -- Adds 16 to IA
         , ALabel "bottom"
         ]
         `shouldBeBytes` [0x02, 0x12]
