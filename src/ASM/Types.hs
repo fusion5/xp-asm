@@ -94,6 +94,11 @@ data Atom operation
   | -- | A Label helps to refer to the program point where it is included
     -- by name
     ALabel LabelText
+  | -- | Emit as many zeroes as needed to reach a multiple given as parameter.
+    -- Note that it doesn't alter virtual addresses.
+    AAlignIA Natural
+    -- | Doesn't emit code but aligns both VA and RVA to a specified alignment
+  | AAlignVA Natural
   deriving (Show, Eq, Generic)
 
 instance Encodable operation => Encodable (Atom operation)

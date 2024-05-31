@@ -51,3 +51,7 @@ Add/test objects that add to RVA but not to IA
   OK
 
 *** Activity stack
+
+- Stop summing up stuff to keep the VA and the RVA, sum only RVA and 
+  obtain VA by adding the image base address
+- Add alignment feature
