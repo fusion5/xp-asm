@@ -47,6 +47,7 @@ Add/test objects that add to RVA but not to IA
 - Rename SEW, what does it mean???
   OK
 
-*** Activity stack
-
 - Get rid of Seq and use ByteString for encoding/decoding...
+  OK
+
+*** Activity stack

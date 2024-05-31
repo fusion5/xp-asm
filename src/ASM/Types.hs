@@ -50,7 +50,7 @@ class Encodable a where
     :: Address address
     => AddressInfo address -- position, needed to compute certain offsets
     -> a -- what to encode
-    -> Either AssemblyError (Seq.Seq Word8)
+    -> Either AssemblyError BS.ByteString
 
 -- | Memory / program addresses have certain constraints
 class (Integral a, Ord a, Bounded a) => Address a where

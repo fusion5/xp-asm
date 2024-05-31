@@ -16,10 +16,9 @@ import qualified Data.Map as Map
 import qualified Numeric.Decimal.BoundedArithmetic as B
 import qualified Data.Either.Extra as Either
 import qualified Control.Exception as Exception
-import qualified Data.Foldable as F
 
 -- | A simple assembler that produces one object, without imported/exported
--- references. There are three passes:
+-- references. There are three passes (see assemble function):
 --  1. collect a Map from label to location information, (scanLabels)
 --  2. replace labels with the required references by using the map from (1)
 --     (solveReferences)
@@ -57,7 +56,8 @@ addOffsets a@AddressInfo {..} op
       , aiVA = newVA
       }
 
--- | Extract all labels in the sequence in a Map
+-- | Extract all labels in the sequence in a Map. The key is the label and the
+-- value is positional information (AddressInfo)
 scanLabels
   ::
   ( Address address
@@ -70,9 +70,8 @@ scanLabels
 scanLabels Config {..} atoms = aslsLabels <$> foldM scan initialState atoms
   where
     initialState = StateLabelScan
-      { asPosition = AddressInfo minBound minBound acVirtualBaseAddress
-      , aslsLabels = Map.empty
-      }
+      (AddressInfo minBound minBound acVirtualBaseAddress) Map.empty
+
     scan s@StateLabelScan {..} (AOp op) = do
       newPosition <- addOffsets asPosition op
       pure s
@@ -93,9 +92,7 @@ safeDowncast :: (Integral a, Bounded a) => Integer -> Either AssemblyError a
 safeDowncast = Either.mapLeft (Arithmetic . ExceptionWrap)
              . B.fromIntegerBounded
 
--- | Solve label references to dictionary addresses. Again it keeps track of
--- the offset it is at like in scanLabels. Perhaps this duplicate operation
--- could be factored out, but it shouldn't be too expensive...
+-- | Solve label references to dictionary addresses.
 solveReferences
   :: (Traversable op, Address address, ByteSized op)
   => Config address
@@ -137,7 +134,7 @@ solveAtomReferences Config {..} labelDictionary s@StateReferenceSolve {..} = go
     solveReference (RefIA labelText) =
       SolvedIA . aiIA <$> query labelText
 
--- | Encode solved references to ByteString
+-- | Encode solved references to ByteString. Keeps track of current positions
 encodeSolved
   :: forall op address
   .  ( Address address
@@ -149,14 +146,13 @@ encodeSolved
 encodeSolved Config {..} atoms
     = sesEncoded <$> foldM encodeAtom initialState atoms
   where
-    initialState :: StateEncodeSolved address
     initialState = StateEncodeSolved
       (AddressInfo minBound minBound acVirtualBaseAddress) ""
 
     encodeAtom s (ALabel _) = pure s
     encodeAtom s@StateEncodeSolved {..} (AOp op)
       = do
-        encodedOp   <- BS.pack . F.toList <$> encode sesPosition op
+        encodedOp   <- encode sesPosition op
         opLength    <- safeDowncast $ fromIntegral $ BS.length encodedOp
         newPosition <- assert (sizeRVA op == opLength) $
           addOffsets sesPosition op
