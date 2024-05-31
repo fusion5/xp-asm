@@ -21,7 +21,7 @@ data TestOpcode address
   = JumpAbsolute address
   | JumpRelative address
   | Noop
-  | IAOffset Int64
+  | IAOffset Natural
   deriving (Show, Eq, Functor, Foldable, Traversable, Generic)
 
 newtype BSByteShow = BSByteShow BS.ByteString deriving (Eq)
@@ -41,7 +41,7 @@ instance ByteSized TestOpcode where
   sizeIA (JumpAbsolute _)  = 1 + 4
   sizeIA (JumpRelative _)  = 1 + 1
   sizeIA Noop         = 2
-  sizeIA (IAOffset n) = n
+  sizeIA (IAOffset n) = fromIntegral n
 
 instance Address Word32
 
@@ -109,8 +109,8 @@ main = hspec $
       assembleAtoms [ALabel "l"] `shouldBeBytes` []
 
     it "Undefined reference returns an error" $
-      assembleAtoms [AOp (JumpAbsolute (RefVA "missing"))]
-        `shouldBe` Left (ReferenceMissing "missing")
+      shouldBeError $
+        assembleAtoms [AOp (JumpAbsolute (RefVA "missing"))]
 
     it "Address encoding is 32 bit Little Endian" $
       encode (AddressInfo (0 :: Word32) (0 :: Word32) (0 :: Word32)) (0x100 :: Word32)
@@ -191,22 +191,60 @@ main = hspec $
         ]
         `shouldBeBytes` [0x01, 0x00, 0x01, 0x00, 0x00]
 
-    it "Relative backwards image reference should be -16" $
+
+    it "Relative backwards image reference minimum (-128)" $
       assembleAtoms
         [ ALabel "top"
-        , AOp (IAOffset 16)
+        , AOp (IAOffset 128)
         , AOp (JumpRelative (RefIA "top"))
         ]
-        `shouldBeBytes` [0x02, 0xF0]
+        `shouldBeBytes` [0x02, 0x80]
 
-    it "Relative forward image reference should be 2+16" $
+    it "Relative backwards image reference underflow (-129)" $
+      shouldBeError $
+        assembleAtoms
+          [ ALabel "top"
+          , AOp (IAOffset 129)
+          , AOp (JumpRelative (RefIA "top"))
+          ]
+
+    it "Relative backwards image reference -1" $
       assembleAtoms
-        [ -- Relative reference point is before the instruction
-          AOp (JumpRelative (RefIA "bottom")) -- Adds 2 (jump instruction width)
-        , AOp (IAOffset 16) -- Adds 16 to IA
+        [ ALabel "top"
+        , AOp (IAOffset 1)
+        , AOp (JumpRelative (RefIA "top"))
+        ]
+        `shouldBeBytes` [0x02, 0xFF]
+
+    it "Relative image reference offset 0" $
+      assembleAtoms
+        [ ALabel "top"
+        , AOp (JumpRelative (RefIA "top"))
+        ]
+        `shouldBeBytes` [0x02, 0x00]
+
+    it "Relative image reference offset 2" $
+      assembleAtoms
+        [ AOp (JumpRelative (RefIA "bottom"))
         , ALabel "bottom"
         ]
-        `shouldBeBytes` [0x02, 0x12]
+        `shouldBeBytes` [0x02, 0x02]
+
+    it "Relative image reference maximum (127)" $
+      assembleAtoms
+        [ AOp (JumpRelative (RefIA "bottom"))
+        , AOp (IAOffset 125)
+        , ALabel "bottom"
+        ]
+        `shouldBeBytes` [0x02, 127]
+
+    it "Relative image reference overflow (128)" $
+      shouldBeError $
+        assembleAtoms
+          [ AOp (JumpRelative (RefIA "bottom"))
+          , AOp (IAOffset 126)
+          , ALabel "bottom"
+          ]
 
   where
     -- Wraps the bytestring to produce different show output
@@ -219,6 +257,15 @@ main = hspec $
       = BSByteShow got `shouldBe` BSByteShow (BS.pack expected)
     shouldBeBytes got expected
       = shouldBe got (Right (BS.pack expected))
+
+    shouldBeError
+      :: HasCallStack
+      => Either AssemblyError BS.ByteString
+      -> IO ()
+    shouldBeError (Right got) =
+      expectationFailure $
+        "Expecting error, got " <> show (BSByteShow got)
+    shouldBeError _ = pure ()
 
     assembleAtoms
       :: [Atom (TestOpcode Reference)]
