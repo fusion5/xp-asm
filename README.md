@@ -38,7 +38,11 @@ Add/test objects that add to RVA but not to IA
 
 2024-05-30
 
+- Use AddressInfo to keep track of position in StateLabelScan
+  OK
+
 *** Activity stack
 
-Add test and functionality to compute a relative (signed) offset from the 
+- Add test and functionality to compute a relative (signed) offset from the 
 current position to a label
+- Get rid of Seq and use ByteString for encoding/decoding...

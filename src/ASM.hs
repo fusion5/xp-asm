@@ -43,35 +43,46 @@ boundedBinopMapEx
 boundedBinopMapEx ex op o1 o2
   = Either.mapLeft ex $ op o1 o2
 
+addOffsets
+  :: (ByteSized op, Address address)
+  => AddressInfo address
+  -> op a
+  -> Either AssemblyError (AddressInfo address)
+addOffsets a@AddressInfo {..} op
+  = do
+    newIA  <- (fromIntegral . sizeIA)  op `safePlus` aiIA
+    newRVA <- (fromIntegral . sizeRVA) op `safePlus` aiRelativeVA
+    newVA  <- (fromIntegral . sizeRVA) op `safePlus` aiVA
+    pure $ a
+      { aiIA = newIA
+      , aiRelativeVA = newRVA
+      , aiVA = newVA
+      }
+
 -- | Extract all labels in the sequence in a Map
 scanLabels
   ::
   ( Address address
   , Functor op
-  , ByteSized (op Reference)
+  , ByteSized op
   )
-  => Seq.Seq (Atom (op Reference))
+  => Config address
+  -> Seq.Seq (Atom (op Reference))
   -> Either AssemblyError (Map.Map LabelText (AddressInfo address))
-scanLabels atoms = aslsLabels <$> foldM scan initialState atoms
+scanLabels Config {..} atoms = aslsLabels <$> foldM scan initialState atoms
   where
     initialState = StateLabelScan
-      { aslsIAOffset = 0
-      , aslsRelativeVAOffset = 0
+      { asPosition = AddressInfo minBound minBound acVirtualBaseAddress
       , aslsLabels = Map.empty
       }
     scan s@StateLabelScan {..} (AOp op) = do
-      newIA  <- (fromIntegral . sizeIA)  op `safePlus` aslsIAOffset
-      newRVA <- (fromIntegral . sizeRVA) op `safePlus` aslsRelativeVAOffset
+      newPosition <- addOffsets asPosition op
       pure s
-        { aslsIAOffset         = newIA
-        , aslsRelativeVAOffset = newRVA
+        { asPosition = newPosition
         }
     scan s@StateLabelScan {..} (ALabel labelText) =
-      let
-        aiIA         = aslsIAOffset
-        aiRelativeVA = aslsRelativeVAOffset
-      in pure s
-        { aslsLabels = Map.insert labelText (AddressInfo {..}) aslsLabels
+      pure s
+        { aslsLabels = Map.insert labelText asPosition aslsLabels
         }
 
 safePlus :: (Address a) => a -> a -> Either AssemblyError a
@@ -87,7 +98,7 @@ safeDowncast = Either.mapLeft (Arithmetic . SEW) . B.fromIntegerBounded
 -- the offset it is at like in scanLabels. Perhaps this duplicate operation
 -- could be factored out, but it shouldn't be too expensive...
 solveReferences
-  :: (Traversable op, Address address, ByteSized (op Reference))
+  :: (Traversable op, Address address, ByteSized op)
   => Config address
   -> Map.Map LabelText (AddressInfo address)
   -> Seq.Seq (Atom (op Reference))
@@ -103,7 +114,7 @@ solveReferences c labelDictionary atoms
 
 -- | Solve references possibly present in an Atom
 solveAtomReferences
-  :: (Traversable op, Address address, ByteSized (op Reference))
+  :: (Traversable op, Address address, ByteSized op)
   => Config address
   -> Map.Map LabelText (AddressInfo address)
   -> StateReferenceSolve op address
@@ -139,29 +150,27 @@ solveAtomReferences Config {..} labelDictionary s@StateReferenceSolve {..} = go
 encodeSolved
   :: forall op address
   .  ( Address address
+     , ByteSized op
      , Encodable (op (SolvedReference address)))
   => Config address
   -> Seq.Seq (Atom (op (SolvedReference address)))
   -> Either AssemblyError BS.ByteString
-encodeSolved Config {} atoms
+encodeSolved Config {..} atoms
     = sesEncoded <$> foldM encodeAtom initialState atoms
   where
     initialState :: StateEncodeSolved address
-    initialState = StateEncodeSolved (AddressInfo minBound minBound) ""
+    initialState = StateEncodeSolved
+      (AddressInfo minBound minBound acVirtualBaseAddress) ""
 
     encodeAtom s (ALabel _) = pure s
     encodeAtom s@StateEncodeSolved {..} (AOp op)
       = do
-        let AddressInfo {..} = sesAddressInfo
-        encodedOp <- BS.pack . F.toList <$> encode sesAddressInfo op
-        opLength  <- safeDowncast $ fromIntegral $ BS.length encodedOp
-        newIA     <- opLength `safePlus` aiIA
-        newRVA    <- opLength `safePlus` aiRelativeVA
+        encodedOp   <- BS.pack . F.toList <$> encode sesPosition op
+        opLength    <- safeDowncast $ fromIntegral $ BS.length encodedOp
+        newPosition <- assert (sizeRVA op == opLength) $
+          addOffsets sesPosition op
         pure s
-          { sesAddressInfo = AddressInfo
-            { aiIA         = newIA
-            , aiRelativeVA = newRVA
-            }
+          { sesPosition = newPosition
           , sesEncoded = sesEncoded <> encodedOp
           }
 
@@ -169,7 +178,7 @@ assemble
   ::
   ( Address address
   , Traversable op
-  , ByteSized (op Reference)
+  , ByteSized op
   , Encodable (op (SolvedReference address))
   )
   => Config address
@@ -177,5 +186,5 @@ assemble
   -> Either AssemblyError BS.ByteString
 assemble cfg input
   = do
-    labelMap <- scanLabels input
+    labelMap <- scanLabels cfg input
     solveReferences cfg labelMap input >>= encodeSolved cfg

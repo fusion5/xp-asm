@@ -7,6 +7,7 @@ module Common
   , module Data.Word
   , module GHC.Generics
   , module Numeric.Natural
+  , assert
   ) where
 
 import Control.Monad
@@ -17,3 +18,4 @@ import Data.Kind
 import Data.Word
 import GHC.Generics hiding (S)
 import Numeric.Natural
+import Control.Exception (assert)

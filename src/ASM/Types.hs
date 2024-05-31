@@ -37,9 +37,10 @@ instance Eq SomeExceptionWrap where
 type LabelText = Text.Text
 
 -- TODO: consider Foreign.Storable, add the 'alignment' method
-class ByteSized a where
-  sizeIA  :: a -> Int.Int64
-  sizeRVA :: a -> Int.Int64
+-- TODO: The size might not always be Int64...
+class ByteSized f where
+  sizeIA  :: f a -> Int.Int64
+  sizeRVA :: f a -> Int.Int64
 
 -- | Define the encoding of opcodes outside of the library.
 -- | Why not use the Binary class? It doesn't easily allow nice error handling.
@@ -61,6 +62,8 @@ data AddressInfo address
   , -- | Relative Virtual Address e.g. of a label (in-memory address minus
     -- image base address)
     aiRelativeVA :: address
+  , -- | Virtual address e.g. of a label
+    aiVA :: address
   }
 
 -- The type of references and solved references defined here must cover the
@@ -70,7 +73,7 @@ data Reference
     -- the file) of label
     RefIA LabelText
   | -- | Relative Virtual Address (in-memory address minus image base
-    -- address) of label
+    -- address) of label. In other words relative to the image base address.
     RefRelativeVA LabelText
   | -- | Virtual Address (in-memory address) of label
     RefVA LabelText
@@ -108,14 +111,15 @@ data Config address
 -- encountered and their address information. This is its state
 data StateLabelScan address
   = StateLabelScan
-    { -- | Current offset in generated image file (from the beginning)
-      aslsIAOffset :: address
-      -- | Current in-memory offset relative to the image base address. This
-      -- is needed because some output files (e.g. Portable Executable) must
-      -- specify to the loader where values are to be stored in memory. This is
-      -- initially 0 and it is often refered to as RVA (Relative Value Address)
-      -- in Microsoft documentation.
-    , aslsRelativeVAOffset :: address
+    { -- | The position information contains:
+      --   - Current offset in generated image file (from the beginning)
+      --   - Current in-memory offset relative to the image base address. This
+      --     is needed because some output files (e.g. Portable Executable)
+      --     must specify to the loader where values are to be stored in
+      --     memory. This is initially 0 and it is often refered to as RVA
+      --     (Relative Value Address) in Microsoft documentation.
+      --   - Current memory address
+      asPosition           :: AddressInfo address
       -- | Unique label name generator counter
       -- , asUID :: Integer
       -- | Encountered labels so far
@@ -132,6 +136,6 @@ data StateReferenceSolve op address
 
 data StateEncodeSolved address
   = StateEncodeSolved
-    { sesAddressInfo :: AddressInfo address
-    , sesEncoded     :: BS.ByteString
+    { sesPosition :: AddressInfo address
+    , sesEncoded  :: BS.ByteString
     }

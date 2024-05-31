@@ -10,15 +10,16 @@ import Common
 
 import ASM
 import ASM.Types
+import Data.Int
 
 import qualified Data.Sequence as Seq
 import qualified Data.Binary.Put as Bin
-import qualified Data.Word as Word
 import qualified Data.ByteString.Lazy as BS
 
 -- | Opcode defined for testing purposes
 data TestOpcode address
   = JumpAbsolute address
+  | JumpRelative address
   | Noop
   | IAOffset16
   deriving (Show, Eq, Functor, Foldable, Traversable, Generic)
@@ -31,12 +32,14 @@ instance Show BSByteShow where
 -- | Warning, this should match the Encodable lengths...
 -- ByteSized and Encodable are separate to reflect that label references are of
 -- known size, but their encoding is not obtainable until resolved
-instance ByteSized (TestOpcode a) where
+instance ByteSized TestOpcode where
   sizeRVA (JumpAbsolute _) = 1 + 4
+  sizeRVA (JumpRelative _) = 1 + 1
   sizeRVA Noop       = 2
   sizeRVA IAOffset16 = 0
 
   sizeIA (JumpAbsolute _)  = 1 + 4
+  sizeIA (JumpRelative _)  = 1 + 1
   sizeIA Noop        = 2
   sizeIA IAOffset16  = 16
 
@@ -45,22 +48,53 @@ instance Address Word32
 instance Encodable Word32 where
   encode _ = pure . Seq.fromList . BS.unpack . Bin.runPut . Bin.putWord32le . fromIntegral
 
-instance Encodable (SolvedReference Word32) where
-  encode addressInfo (SolvedIA addr)         = encode addressInfo addr
-  encode addressInfo (SolvedRelativeVA addr) = encode addressInfo addr
-  encode addressInfo (SolvedVA addr)         = encode addressInfo addr
+instance Encodable Int8 where
+  encode _ = pure . Seq.fromList . BS.unpack . Bin.runPut . Bin.putWord8 . fromIntegral
+
+-- Example of encoding an absolute reference to an address
+encodeAbsolute
+  :: (Address address)
+  => AddressInfo address
+  -> SolvedReference Word32
+  -> Either AssemblyError (Seq.Seq Word8)
+encodeAbsolute addressInfo (SolvedIA addr)         = encode addressInfo addr
+encodeAbsolute addressInfo (SolvedRelativeVA addr) = encode addressInfo addr
+encodeAbsolute addressInfo (SolvedVA addr)         = encode addressInfo addr
+
+-- Example of encoding a relative reference to an address.
+-- If the offset exceeds 1 byte signed integer then error out with overflow.
+encodeRelative
+  :: (Address address)
+  => AddressInfo address
+  -> SolvedReference Word32
+  -> Either AssemblyError (Seq.Seq Word8)
+encodeRelative ai@AddressInfo {..} solvedReference
+    = go solvedReference >>= encodeInt8
+  where
+    go (SolvedIA targetAddr)
+      = safeDowncast (fromIntegral targetAddr - fromIntegral aiIA)
+    go (SolvedRelativeVA targetAddr)
+      = safeDowncast (fromIntegral targetAddr - fromIntegral aiRelativeVA)
+    go (SolvedVA targetAddr)
+      = safeDowncast (fromIntegral targetAddr - fromIntegral aiRelativeVA)
+    encodeInt8 :: Int8 -> Either AssemblyError (Seq.Seq Word8)
+    encodeInt8 = encode ai
 
 instance Encodable (TestOpcode (SolvedReference Word32)) where
   encode addressInfo (JumpAbsolute ref)
     = do
-      addr <- encode addressInfo ref
+      addr <- encodeAbsolute addressInfo ref
       pure $ Seq.singleton 0x01 <> addr
+  encode addressInfo (JumpRelative ref)
+    = do
+      addr <- encodeRelative addressInfo ref
+      pure $ Seq.singleton 0x02 <> addr
   encode _addressInfo Noop
     = pure $ Seq.fromList [0x03, 0x03]
   encode _addressInfo IAOffset16
     = pure Seq.empty
 
-defaultConfig :: Config Word.Word32
+defaultConfig :: Config Word32
 defaultConfig = Config {..}
   where
     acVirtualBaseAddress = 0x100
@@ -81,7 +115,7 @@ main = hspec $
         `shouldBe` Left (ReferenceMissing "missing")
 
     it "Address encoding is 32 bit Little Endian" $
-      encode (AddressInfo (0 :: Word32) (0 :: Word32)) (0x100 :: Word32)
+      encode (AddressInfo (0 :: Word32) (0 :: Word32) (0 :: Word32)) (0x100 :: Word32)
         `shouldBe` Right (Seq.fromList [0x00, 0x01, 0x00, 0x00])
 
     it "A RefVA reference should return the virtual address 0x100 for top" $
