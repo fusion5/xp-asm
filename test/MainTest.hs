@@ -114,7 +114,7 @@ main = hspec $
         ]
         `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x00, 0x00, 0x00])
 
-    it "A RefRelativeVA reference should return 0 for bottom" $
+    it "A RefRelativeVA reference should return 5 for bottom" $
       assembleAtoms
         [ AOp (JumpTo (RefRelativeVA "bottom"))
         , ALabel "bottom"
@@ -127,6 +127,13 @@ main = hspec $
         , AOp (JumpTo (RefIA "top"))
         ]
         `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x00, 0x00, 0x00])
+
+    it "A RefIA reference should return 5 for bottom" $
+      assembleAtoms
+        [ AOp (JumpTo (RefIA "bottom"))
+        , ALabel "bottom"
+        ]
+        `shouldBeBS` Right (BS.pack [0x01, 0x05, 0x00, 0x00, 0x00])
 
     it "A RefIA reference should be affected by an Image Address offset" $
       assembleAtoms
@@ -143,6 +150,14 @@ main = hspec $
         , AOp (JumpTo (RefRelativeVA "top"))
         ]
         `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x00, 0x00, 0x00])
+
+    it "A RefVA reference should not be affected by an Image Address offset" $
+      assembleAtoms
+        [ AOp IAOffset16
+        , ALabel "top"
+        , AOp (JumpTo (RefVA "top"))
+        ]
+        `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x01, 0x00, 0x00])
 
   where
     -- Wraps the bytestring to produce different show output
