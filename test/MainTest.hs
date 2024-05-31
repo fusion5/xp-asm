@@ -76,7 +76,7 @@ encodeRelative ai@AddressInfo {..} solvedReference
     go (SolvedRelativeVA targetAddr)
       = safeDowncast (fromIntegral targetAddr - fromIntegral aiRelativeVA)
     go (SolvedVA targetAddr)
-      = safeDowncast (fromIntegral targetAddr - fromIntegral aiRelativeVA)
+      = safeDowncast (fromIntegral targetAddr - fromIntegral aiVA)
     encodeInt8 :: Int8 -> Either AssemblyError (Seq.Seq Word8)
     encodeInt8 = encode ai
 
@@ -103,12 +103,10 @@ main :: IO ()
 main = hspec $
   do
     it "Empty list assembly returns no bytes" $
-      assembleAtoms []
-        `shouldBe` Right ""
+      assembleAtoms [] `shouldBeBytes` []
 
     it "Label should not generate any bytes" $
-      assembleAtoms [ALabel "l"]
-        `shouldBe` Right ""
+      assembleAtoms [ALabel "l"] `shouldBeBytes` []
 
     it "Undefined reference returns an error" $
       assembleAtoms [AOp (JumpAbsolute (RefVA "missing"))]
@@ -123,7 +121,7 @@ main = hspec $
         [ ALabel "top"
         , AOp (JumpAbsolute (RefVA "top"))
         ]
-        `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x01, 0x00, 0x00])
+        `shouldBeBytes` [0x01, 0x00, 0x01, 0x00, 0x00]
 
     it "A RefVA reference should return the virtual address 0x102 in the middle" $
       assembleAtoms
@@ -131,7 +129,7 @@ main = hspec $
         , ALabel "top"
         , AOp (JumpAbsolute (RefVA "top"))
         ]
-        `shouldBeBS` Right (BS.pack [0x03, 0x03, 0x01, 0x02, 0x01, 0x00, 0x00])
+        `shouldBeBytes` [0x03, 0x03, 0x01, 0x02, 0x01, 0x00, 0x00]
 
     it "A RefVA reference should return the virtual address 0x107 at the end" $
       assembleAtoms
@@ -139,35 +137,35 @@ main = hspec $
         , AOp Noop
         , ALabel "bottom"
         ]
-        `shouldBeBS` Right (BS.pack [0x01, 0x07, 0x01, 0x00, 0x00, 0x03, 0x03])
+        `shouldBeBytes` [0x01, 0x07, 0x01, 0x00, 0x00, 0x03, 0x03]
 
     it "A RefRelativeVA reference should return 0 for top" $
       assembleAtoms
         [ ALabel "top"
         , AOp (JumpAbsolute (RefRelativeVA "top"))
         ]
-        `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x00, 0x00, 0x00])
+        `shouldBeBytes` [0x01, 0x00, 0x00, 0x00, 0x00]
 
     it "A RefRelativeVA reference should return 5 for bottom" $
       assembleAtoms
         [ AOp (JumpAbsolute (RefRelativeVA "bottom"))
         , ALabel "bottom"
         ]
-        `shouldBeBS` Right (BS.pack [0x01, 0x05, 0x00, 0x00, 0x00])
+        `shouldBeBytes` [0x01, 0x05, 0x00, 0x00, 0x00]
 
     it "A RefIA reference should return 0 for top" $
       assembleAtoms
         [ ALabel "top"
         , AOp (JumpAbsolute (RefIA "top"))
         ]
-        `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x00, 0x00, 0x00])
+        `shouldBeBytes` [0x01, 0x00, 0x00, 0x00, 0x00]
 
     it "A RefIA reference should return 5 for bottom" $
       assembleAtoms
         [ AOp (JumpAbsolute (RefIA "bottom"))
         , ALabel "bottom"
         ]
-        `shouldBeBS` Right (BS.pack [0x01, 0x05, 0x00, 0x00, 0x00])
+        `shouldBeBytes` [0x01, 0x05, 0x00, 0x00, 0x00]
 
     it "A RefIA reference should be affected by an Image Address offset" $
       assembleAtoms
@@ -175,7 +173,7 @@ main = hspec $
         , ALabel "top"
         , AOp (JumpAbsolute (RefIA "top"))
         ]
-        `shouldBeBS` Right (BS.pack [0x01, 0x10, 0x00, 0x00, 0x00])
+        `shouldBeBytes` [0x01, 0x10, 0x00, 0x00, 0x00]
 
     it "A RefRVA reference should not be affected by an Image Address offset" $
       assembleAtoms
@@ -183,7 +181,7 @@ main = hspec $
         , ALabel "top"
         , AOp (JumpAbsolute (RefRelativeVA "top"))
         ]
-        `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x00, 0x00, 0x00])
+        `shouldBeBytes` [0x01, 0x00, 0x00, 0x00, 0x00]
 
     it "A RefVA reference should not be affected by an Image Address offset" $
       assembleAtoms
@@ -191,17 +189,28 @@ main = hspec $
         , ALabel "top"
         , AOp (JumpAbsolute (RefVA "top"))
         ]
-        `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x01, 0x00, 0x00])
+        `shouldBeBytes` [0x01, 0x00, 0x01, 0x00, 0x00]
+
+    it "Relative references, IA" $
+      assembleAtoms
+        [ ALabel "top"
+        , AOp IAOffset16
+        , AOp (JumpRelative (RefVA "top"))
+        ]
+        `shouldBeBytes` []
 
   where
     -- Wraps the bytestring to produce different show output
-    shouldBeBS
+    shouldBeBytes
       :: HasCallStack
       => Either AssemblyError BS.ByteString
-      -> Either AssemblyError BS.ByteString
+      -> [Word8]
       -> IO ()
-    shouldBeBS (Right got) (Right expected) = BSByteShow got `shouldBe` BSByteShow expected
-    shouldBeBS got expected = shouldBe got expected
+    shouldBeBytes (Right got) expected
+      = BSByteShow got `shouldBe` BSByteShow (BS.pack expected)
+    shouldBeBytes got expected
+      = shouldBe got (Right (BS.pack expected))
+
     assembleAtoms
       :: [Atom (TestOpcode Reference)]
       -> Either AssemblyError BS.ByteString
