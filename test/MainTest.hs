@@ -191,13 +191,22 @@ main = hspec $
         ]
         `shouldBeBytes` [0x01, 0x00, 0x01, 0x00, 0x00]
 
-    it "Relative references, IA" $
+    it "Relative backwards image reference should be -16" $
       assembleAtoms
         [ ALabel "top"
         , AOp IAOffset16
-        , AOp (JumpRelative (RefVA "top"))
+        , AOp (JumpRelative (RefIA "top"))
         ]
-        `shouldBeBytes` []
+        `shouldBeBytes` [0x02, 0xF0]
+
+    it "Relative forward image reference should be 2+16" $
+      assembleAtoms
+        [ -- Relative reference point is before the instruction
+          AOp (JumpRelative (RefIA "bottom")) -- Adds 2 (jump instruction width)
+        , AOp IAOffset16 -- Adds 16
+        , ALabel "bottom"
+        ]
+        `shouldBeBytes` [0x02, 0x12]
 
   where
     -- Wraps the bytestring to produce different show output

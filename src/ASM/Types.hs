@@ -131,7 +131,6 @@ data StateLabelScan address
 data StateReferenceSolve op address
   = StateReferenceSolve
     { asrsAtoms :: Seq.Seq (Atom (op (SolvedReference address)))
-    , asrsRelativeVAOffset :: address
     }
 
 data StateEncodeSolved address

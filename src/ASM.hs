@@ -1,5 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module ASM
 ( assemble
 , Config (..)
@@ -107,10 +105,7 @@ solveReferences c labelDictionary atoms
     = asrsAtoms <$> foldM (solveAtomReferences c labelDictionary) initialState
         atoms
   where
-    initialState = StateReferenceSolve
-      { asrsAtoms = Seq.empty
-      , asrsRelativeVAOffset = 0
-      }
+    initialState = StateReferenceSolve Seq.empty
 
 -- | Solve references possibly present in an Atom
 solveAtomReferences
@@ -123,27 +118,22 @@ solveAtomReferences
 solveAtomReferences Config {..} labelDictionary s@StateReferenceSolve {..} = go
   where
     go (AOp opUnsolved) = do
-      opSolved <- AOp <$> Prelude.mapM (solveReference asrsRelativeVAOffset)
-        opUnsolved
-      newRVA <- (fromIntegral . sizeRVA) opUnsolved `safePlus` asrsRelativeVAOffset
+      opSolved <- AOp <$> Prelude.mapM solveReference opUnsolved
       pure s
         { asrsAtoms = asrsAtoms Seq.|> opSolved
-        , asrsRelativeVAOffset = newRVA
         }
     go (ALabel _) = pure s -- self-solve labels? no need, discard them...
 
     query labelText
-      = Either.maybeToEither
-          (ReferenceMissing labelText)
+      = Either.maybeToEither (ReferenceMissing labelText)
           (Map.lookup labelText labelDictionary)
 
-    -- TODO: Save the first parameter somewhere...
-    solveReference _ (RefVA labelText) = do
+    solveReference (RefVA labelText) = do
       rva <- aiRelativeVA <$> query labelText
       SolvedVA <$> rva `safePlus` acVirtualBaseAddress
-    solveReference _ (RefRelativeVA labelText) =
+    solveReference (RefRelativeVA labelText) =
       SolvedRelativeVA . aiRelativeVA <$> query labelText
-    solveReference _ (RefIA labelText) =
+    solveReference (RefIA labelText) =
       SolvedIA . aiIA <$> query labelText
 
 -- | Encode solved references to ByteString
