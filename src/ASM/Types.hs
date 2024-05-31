@@ -26,13 +26,14 @@ data AssemblyError
 
 instance Exception.Exception AssemblyError
 
-newtype SomeExceptionWrap = SEW Exception.SomeException deriving (Show)
+newtype SomeExceptionWrap
+  = ExceptionWrap Exception.SomeException deriving (Show)
 
 -- | Defining a manual instance because SomeException doesn't make it possible
 -- to derive Eq. This is a solution to the problem of checking for Exceptions
 -- in unit tests.
 instance Eq SomeExceptionWrap where
-  (SEW se1) == (SEW se2) = show se1 == show se2
+  (ExceptionWrap se1) == (ExceptionWrap se2) = show se1 == show se2
 
 type LabelText = Text.Text
 

@@ -84,13 +84,14 @@ scanLabels Config {..} atoms = aslsLabels <$> foldM scan initialState atoms
         }
 
 safePlus :: (Address a) => a -> a -> Either AssemblyError a
-safePlus = boundedBinopMapEx (Arithmetic . SEW) B.plusBounded
+safePlus = boundedBinopMapEx (Arithmetic . ExceptionWrap) B.plusBounded
 
 safeMinus :: (Address a) => a -> a -> Either AssemblyError a
-safeMinus = boundedBinopMapEx (Arithmetic . SEW) B.minusBounded
+safeMinus = boundedBinopMapEx (Arithmetic . ExceptionWrap) B.minusBounded
 
 safeDowncast :: (Integral a, Bounded a) => Integer -> Either AssemblyError a
-safeDowncast = Either.mapLeft (Arithmetic . SEW) . B.fromIntegerBounded
+safeDowncast = Either.mapLeft (Arithmetic . ExceptionWrap)
+             . B.fromIntegerBounded
 
 -- | Solve label references to dictionary addresses. Again it keeps track of
 -- the offset it is at like in scanLabels. Perhaps this duplicate operation

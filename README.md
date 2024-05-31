@@ -44,7 +44,9 @@ Add/test objects that add to RVA but not to IA
 - Add relative (signed) offsets from the current position to a label + tests
   OK
 
+- Rename SEW, what does it mean???
+  OK
+
 *** Activity stack
 
-- Rename SEW, what does it mean???
 - Get rid of Seq and use ByteString for encoding/decoding...
