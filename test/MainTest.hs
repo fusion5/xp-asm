@@ -18,12 +18,12 @@ import qualified Data.ByteString.Lazy as BS
 
 -- | Opcode defined for testing purposes
 data TestOpcode address
-  = JumpTo address
+  = JumpAbsolute address
   | Noop
   | IAOffset16
   deriving (Show, Eq, Functor, Foldable, Traversable, Generic)
 
-data BSByteShow = BSByteShow BS.ByteString deriving (Eq)
+newtype BSByteShow = BSByteShow BS.ByteString deriving (Eq)
 
 instance Show BSByteShow where
   show (BSByteShow bs) = show (BS.unpack bs)
@@ -32,11 +32,11 @@ instance Show BSByteShow where
 -- ByteSized and Encodable are separate to reflect that label references are of
 -- known size, but their encoding is not obtainable until resolved
 instance ByteSized (TestOpcode a) where
-  sizeRVA (JumpTo _) = 1 + 4
+  sizeRVA (JumpAbsolute _) = 1 + 4
   sizeRVA Noop       = 2
   sizeRVA IAOffset16 = 0
 
-  sizeIA (JumpTo _)  = 1 + 4
+  sizeIA (JumpAbsolute _)  = 1 + 4
   sizeIA Noop        = 2
   sizeIA IAOffset16  = 16
 
@@ -51,7 +51,7 @@ instance Encodable (SolvedReference Word32) where
   encode addressInfo (SolvedVA addr)         = encode addressInfo addr
 
 instance Encodable (TestOpcode (SolvedReference Word32)) where
-  encode addressInfo (JumpTo ref)
+  encode addressInfo (JumpAbsolute ref)
     = do
       addr <- encode addressInfo ref
       pure $ Seq.singleton 0x01 <> addr
@@ -77,7 +77,7 @@ main = hspec $
         `shouldBe` Right ""
 
     it "Undefined reference returns an error" $
-      assembleAtoms [AOp (JumpTo (RefVA "missing"))]
+      assembleAtoms [AOp (JumpAbsolute (RefVA "missing"))]
         `shouldBe` Left (ReferenceMissing "missing")
 
     it "Address encoding is 32 bit Little Endian" $
@@ -87,7 +87,7 @@ main = hspec $
     it "A RefVA reference should return the virtual address 0x100 for top" $
       assembleAtoms
         [ ALabel "top"
-        , AOp (JumpTo (RefVA "top"))
+        , AOp (JumpAbsolute (RefVA "top"))
         ]
         `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x01, 0x00, 0x00])
 
@@ -95,13 +95,13 @@ main = hspec $
       assembleAtoms
         [ AOp Noop
         , ALabel "top"
-        , AOp (JumpTo (RefVA "top"))
+        , AOp (JumpAbsolute (RefVA "top"))
         ]
         `shouldBeBS` Right (BS.pack [0x03, 0x03, 0x01, 0x02, 0x01, 0x00, 0x00])
 
     it "A RefVA reference should return the virtual address 0x107 at the end" $
       assembleAtoms
-        [ AOp (JumpTo (RefVA "bottom"))
+        [ AOp (JumpAbsolute (RefVA "bottom"))
         , AOp Noop
         , ALabel "bottom"
         ]
@@ -110,13 +110,13 @@ main = hspec $
     it "A RefRelativeVA reference should return 0 for top" $
       assembleAtoms
         [ ALabel "top"
-        , AOp (JumpTo (RefRelativeVA "top"))
+        , AOp (JumpAbsolute (RefRelativeVA "top"))
         ]
         `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x00, 0x00, 0x00])
 
     it "A RefRelativeVA reference should return 5 for bottom" $
       assembleAtoms
-        [ AOp (JumpTo (RefRelativeVA "bottom"))
+        [ AOp (JumpAbsolute (RefRelativeVA "bottom"))
         , ALabel "bottom"
         ]
         `shouldBeBS` Right (BS.pack [0x01, 0x05, 0x00, 0x00, 0x00])
@@ -124,13 +124,13 @@ main = hspec $
     it "A RefIA reference should return 0 for top" $
       assembleAtoms
         [ ALabel "top"
-        , AOp (JumpTo (RefIA "top"))
+        , AOp (JumpAbsolute (RefIA "top"))
         ]
         `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x00, 0x00, 0x00])
 
     it "A RefIA reference should return 5 for bottom" $
       assembleAtoms
-        [ AOp (JumpTo (RefIA "bottom"))
+        [ AOp (JumpAbsolute (RefIA "bottom"))
         , ALabel "bottom"
         ]
         `shouldBeBS` Right (BS.pack [0x01, 0x05, 0x00, 0x00, 0x00])
@@ -139,7 +139,7 @@ main = hspec $
       assembleAtoms
         [ AOp IAOffset16
         , ALabel "top"
-        , AOp (JumpTo (RefIA "top"))
+        , AOp (JumpAbsolute (RefIA "top"))
         ]
         `shouldBeBS` Right (BS.pack [0x01, 0x10, 0x00, 0x00, 0x00])
 
@@ -147,7 +147,7 @@ main = hspec $
       assembleAtoms
         [ AOp IAOffset16
         , ALabel "top"
-        , AOp (JumpTo (RefRelativeVA "top"))
+        , AOp (JumpAbsolute (RefRelativeVA "top"))
         ]
         `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x00, 0x00, 0x00])
 
@@ -155,7 +155,7 @@ main = hspec $
       assembleAtoms
         [ AOp IAOffset16
         , ALabel "top"
-        , AOp (JumpTo (RefVA "top"))
+        , AOp (JumpAbsolute (RefVA "top"))
         ]
         `shouldBeBS` Right (BS.pack [0x01, 0x00, 0x01, 0x00, 0x00])
 
