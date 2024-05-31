@@ -42,18 +42,19 @@ boundedBinopMapEx ex op o1 o2
 
 addOffsets
   :: (ByteSized op, Address address)
-  => PositionInfo address
+  => Config address
+  -> PositionInfo address
   -> op a
   -> Either AssemblyError (PositionInfo address)
-addOffsets a@PositionInfo {..} op
+addOffsets Config {..} a@PositionInfo {..} op
   = do
     newIA  <- (fromIntegral . sizeIA)  op `safePlus` piIA
     newRVA <- (fromIntegral . sizeRVA) op `safePlus` piRelativeVA
-    newVA  <- (fromIntegral . sizeRVA) op `safePlus` piVA
+    newVA  <- acVirtualBaseAddress        `safePlus` newRVA
     pure $ a
-      { piIA = newIA
+      { piIA         = newIA
       , piRelativeVA = newRVA
-      , piVA = newVA
+      , piVA         = newVA
       }
 
 -- | Extract all labels in the sequence in a Map. The key is the label and the
@@ -67,13 +68,13 @@ scanLabels
   => Config address
   -> Seq.Seq (Atom (op Reference))
   -> Either AssemblyError (Map.Map LabelText (PositionInfo address))
-scanLabels Config {..} atoms = aslsLabels <$> foldM scan initialState atoms
+scanLabels c@Config {..} atoms = aslsLabels <$> foldM scan initialState atoms
   where
     initialState = StateLabelScan
       (PositionInfo minBound minBound acVirtualBaseAddress) Map.empty
 
     scan s@StateLabelScan {..} (AOp op) = do
-      newPosition <- addOffsets asPosition op
+      newPosition <- addOffsets c asPosition op
       pure s
         { asPosition = newPosition
         }
@@ -143,7 +144,7 @@ encodeSolved
   => Config address
   -> Seq.Seq (Atom (op (SolvedReference address)))
   -> Either AssemblyError BS.ByteString
-encodeSolved Config {..} atoms
+encodeSolved c@Config {..} atoms
     = sesEncoded <$> foldM encodeAtom initialState atoms
   where
     initialState = StateEncodeSolved
@@ -155,7 +156,7 @@ encodeSolved Config {..} atoms
         encodedOp   <- encode sesPosition op
         opLength    <- safeDowncast $ fromIntegral $ BS.length encodedOp
         newPosition <- assert (sizeRVA op == opLength) $
-          addOffsets sesPosition op
+          addOffsets c sesPosition op
         pure s
           { sesPosition = newPosition
           , sesEncoded = sesEncoded <> encodedOp
