@@ -48,23 +48,23 @@ class ByteSized f where
 class Encodable a where
   encode
     :: Address address
-    => AddressInfo address -- position, needed to compute certain offsets
+    => PositionInfo address -- needed to compute certain offsets
     -> a -- what to encode
     -> Either AssemblyError BS.ByteString
 
 -- | Memory / program addresses have certain constraints
 class (Integral a, Ord a, Bounded a) => Address a where
 
-data AddressInfo address
-  = AddressInfo
+data PositionInfo address
+  = PositionInfo
   { -- | Image Address e.g. of a label (in-file address, offset from the
     -- beginning of the file)
-    aiIA  :: address
+    piIA  :: address
   , -- | Relative Virtual Address e.g. of a label (in-memory address minus
     -- image base address)
-    aiRelativeVA :: address
+    piRelativeVA :: address
   , -- | Virtual address e.g. of a label
-    aiVA :: address
+    piVA :: address
   }
 
 -- The type of references and solved references defined here must cover the
@@ -98,8 +98,8 @@ data Atom operation
 
 instance Encodable operation => Encodable (Atom operation)
   where
-    encode addressInfo (AOp op)   = encode addressInfo op
-    encode _           (ALabel _) = pure mempty
+    encode pos (AOp op)   = encode pos op
+    encode _   (ALabel _) = pure mempty
 
 -- | Constant parameters for the assembler.
 data Config address
@@ -120,11 +120,9 @@ data StateLabelScan address
       --     memory. This is initially 0 and it is often refered to as RVA
       --     (Relative Value Address) in Microsoft documentation.
       --   - Current memory address
-      asPosition           :: AddressInfo address
-      -- | Unique label name generator counter
-      -- , asUID :: Integer
+      asPosition :: PositionInfo address
       -- | Encountered labels so far
-    , aslsLabels :: Map.Map LabelText (AddressInfo address)
+    , aslsLabels :: Map.Map LabelText (PositionInfo address)
     }
 
 -- | The reference solver uses the Map of labels and their address information
@@ -136,6 +134,6 @@ data StateReferenceSolve op address
 
 data StateEncodeSolved address
   = StateEncodeSolved
-    { sesPosition :: AddressInfo address
+    { sesPosition :: PositionInfo address
     , sesEncoded  :: BS.ByteString
     }

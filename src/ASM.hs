@@ -42,22 +42,22 @@ boundedBinopMapEx ex op o1 o2
 
 addOffsets
   :: (ByteSized op, Address address)
-  => AddressInfo address
+  => PositionInfo address
   -> op a
-  -> Either AssemblyError (AddressInfo address)
-addOffsets a@AddressInfo {..} op
+  -> Either AssemblyError (PositionInfo address)
+addOffsets a@PositionInfo {..} op
   = do
-    newIA  <- (fromIntegral . sizeIA)  op `safePlus` aiIA
-    newRVA <- (fromIntegral . sizeRVA) op `safePlus` aiRelativeVA
-    newVA  <- (fromIntegral . sizeRVA) op `safePlus` aiVA
+    newIA  <- (fromIntegral . sizeIA)  op `safePlus` piIA
+    newRVA <- (fromIntegral . sizeRVA) op `safePlus` piRelativeVA
+    newVA  <- (fromIntegral . sizeRVA) op `safePlus` piVA
     pure $ a
-      { aiIA = newIA
-      , aiRelativeVA = newRVA
-      , aiVA = newVA
+      { piIA = newIA
+      , piRelativeVA = newRVA
+      , piVA = newVA
       }
 
 -- | Extract all labels in the sequence in a Map. The key is the label and the
--- value is positional information (AddressInfo)
+-- value is positional information (PositionInfo)
 scanLabels
   ::
   ( Address address
@@ -66,11 +66,11 @@ scanLabels
   )
   => Config address
   -> Seq.Seq (Atom (op Reference))
-  -> Either AssemblyError (Map.Map LabelText (AddressInfo address))
+  -> Either AssemblyError (Map.Map LabelText (PositionInfo address))
 scanLabels Config {..} atoms = aslsLabels <$> foldM scan initialState atoms
   where
     initialState = StateLabelScan
-      (AddressInfo minBound minBound acVirtualBaseAddress) Map.empty
+      (PositionInfo minBound minBound acVirtualBaseAddress) Map.empty
 
     scan s@StateLabelScan {..} (AOp op) = do
       newPosition <- addOffsets asPosition op
@@ -96,7 +96,7 @@ safeDowncast = Either.mapLeft (Arithmetic . ExceptionWrap)
 solveReferences
   :: (Traversable op, Address address, ByteSized op)
   => Config address
-  -> Map.Map LabelText (AddressInfo address)
+  -> Map.Map LabelText (PositionInfo address)
   -> Seq.Seq (Atom (op Reference))
   -> Either AssemblyError (Seq.Seq (Atom (op (SolvedReference address))))
 solveReferences c labelDictionary atoms
@@ -109,7 +109,7 @@ solveReferences c labelDictionary atoms
 solveAtomReferences
   :: (Traversable op, Address address, ByteSized op)
   => Config address
-  -> Map.Map LabelText (AddressInfo address)
+  -> Map.Map LabelText (PositionInfo address)
   -> StateReferenceSolve op address
   -> Atom (op Reference)
   -> Either AssemblyError (StateReferenceSolve op address)
@@ -127,12 +127,12 @@ solveAtomReferences Config {..} labelDictionary s@StateReferenceSolve {..} = go
           (Map.lookup labelText labelDictionary)
 
     solveReference (RefVA labelText) = do
-      rva <- aiRelativeVA <$> query labelText
+      rva <- piRelativeVA <$> query labelText
       SolvedVA <$> rva `safePlus` acVirtualBaseAddress
     solveReference (RefRelativeVA labelText) =
-      SolvedRelativeVA . aiRelativeVA <$> query labelText
+      SolvedRelativeVA . piRelativeVA <$> query labelText
     solveReference (RefIA labelText) =
-      SolvedIA . aiIA <$> query labelText
+      SolvedIA . piIA <$> query labelText
 
 -- | Encode solved references to ByteString. Keeps track of current positions
 encodeSolved
@@ -147,7 +147,7 @@ encodeSolved Config {..} atoms
     = sesEncoded <$> foldM encodeAtom initialState atoms
   where
     initialState = StateEncodeSolved
-      (AddressInfo minBound minBound acVirtualBaseAddress) ""
+      (PositionInfo minBound minBound acVirtualBaseAddress) ""
 
     encodeAtom s (ALabel _) = pure s
     encodeAtom s@StateEncodeSolved {..} (AOp op)

@@ -54,44 +54,44 @@ instance Encodable Int8 where
 -- Example of encoding an absolute reference to an address
 encodeAbsolute
   :: (Address address)
-  => AddressInfo address
+  => PositionInfo address
   -> SolvedReference Word32
   -> Either AssemblyError BS.ByteString
-encodeAbsolute addressInfo (SolvedIA addr)         = encode addressInfo addr
-encodeAbsolute addressInfo (SolvedRelativeVA addr) = encode addressInfo addr
-encodeAbsolute addressInfo (SolvedVA addr)         = encode addressInfo addr
+encodeAbsolute pos (SolvedIA addr)         = encode pos addr
+encodeAbsolute pos (SolvedRelativeVA addr) = encode pos addr
+encodeAbsolute pos (SolvedVA addr)         = encode pos addr
 
 -- Example of encoding a relative reference to an address.
 -- If the offset exceeds 1 byte signed integer then error out with overflow.
 encodeRelative
   :: (Address address)
-  => AddressInfo address
+  => PositionInfo address
   -> SolvedReference Word32
   -> Either AssemblyError BS.ByteString
-encodeRelative ai@AddressInfo {..} solvedReference
+encodeRelative pos@PositionInfo {..} solvedReference
     = go solvedReference >>= encodeInt8
   where
     go (SolvedIA targetAddr)
-      = safeDowncast (fromIntegral targetAddr - fromIntegral aiIA)
+      = safeDowncast (fromIntegral targetAddr - fromIntegral piIA)
     go (SolvedRelativeVA targetAddr)
-      = safeDowncast (fromIntegral targetAddr - fromIntegral aiRelativeVA)
+      = safeDowncast (fromIntegral targetAddr - fromIntegral piRelativeVA)
     go (SolvedVA targetAddr)
-      = safeDowncast (fromIntegral targetAddr - fromIntegral aiVA)
+      = safeDowncast (fromIntegral targetAddr - fromIntegral piVA)
     encodeInt8 :: Int8 -> Either AssemblyError BS.ByteString
-    encodeInt8 = encode ai
+    encodeInt8 = encode pos
 
 instance Encodable (TestOpcode (SolvedReference Word32)) where
   encode addressInfo (JumpAbsolute ref)
     = do
       addr <- encodeAbsolute addressInfo ref
       pure $ BS.pack [0x01] <> addr
-  encode addressInfo (JumpRelative ref)
+  encode pos (JumpRelative ref)
     = do
-      addr <- encodeRelative addressInfo ref
+      addr <- encodeRelative pos ref
       pure $ BS.pack [0x02] <> addr
-  encode _addressInfo Noop
+  encode _ Noop
     = pure $ BS.pack [0x03, 0x03]
-  encode _addressInfo (IAOffset _)
+  encode _ (IAOffset _)
     = pure ""
 
 defaultConfig :: Config Word32
@@ -113,7 +113,8 @@ main = hspec $
         assembleAtoms [AOp (JumpAbsolute (RefVA "missing"))]
 
     it "Address encoding is 32 bit Little Endian" $
-      encode (AddressInfo (0 :: Word32) (0 :: Word32) (0 :: Word32)) (0x100 :: Word32)
+      encode (PositionInfo (0 :: Word32) (0 :: Word32) (0 :: Word32))
+        (0x100 :: Word32)
         `shouldBe` Right (BS.pack [0x00, 0x01, 0x00, 0x00])
 
     it "A RefVA reference should return the virtual address 0x100 for top" $
