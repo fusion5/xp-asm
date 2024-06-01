@@ -50,8 +50,10 @@ Add/test objects that add to RVA but not to IA
 - Get rid of Seq and use ByteString for encoding/decoding...
   OK
 
-*** Activity stack
-
 - Stop summing up stuff to keep the VA and the RVA, sum only RVA and 
   obtain VA by adding the image base address
-- Add alignment feature
+  OK
+
+*** Activity stack
+
+- Add alignment feature, AAlignIA, AAlignVA
