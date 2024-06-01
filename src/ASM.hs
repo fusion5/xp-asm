@@ -128,8 +128,7 @@ solveAtomReferences Config {..} labelDictionary s@StateReferenceSolve {..} = go
           (Map.lookup labelText labelDictionary)
 
     solveReference (RefVA labelText) = do
-      rva <- piRelativeVA <$> query labelText
-      SolvedVA <$> rva `safePlus` acVirtualBaseAddress
+      SolvedVA . piVA <$> query labelText
     solveReference (RefRelativeVA labelText) =
       SolvedRelativeVA . piRelativeVA <$> query labelText
     solveReference (RefIA labelText) =
