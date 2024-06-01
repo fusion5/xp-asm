@@ -17,7 +17,7 @@ import qualified Numeric.Decimal.BoundedArithmetic as B
 import qualified Data.Either.Extra as Either
 import qualified Control.Exception as Exception
 
--- | A simple assembler that produces one object, without imported/exported
+-- | An assembler that produces one object, without imported/exported
 -- references. There are three passes (see assemble function):
 --  1. collect a Map from label to location information, (scanLabels)
 --  2. replace labels with the required references by using the map from (1)
