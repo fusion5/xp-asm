@@ -56,4 +56,6 @@ Add/test objects that add to RVA but not to IA
 
 *** Activity stack
 
+- The Address class should have encodeAbsolute and encodeRelative functions
+- Try to make Encodable f :: * -> * and with "f address" 
 - Add alignment feature, AAlignIA, AAlignVA
