@@ -45,21 +45,19 @@ instance ByteSized TestOpcode where
 
 instance Address Word32
 
-instance Encodable Word32 where
-  encode _ = pure . Bin.runPut . Bin.putWord32le . fromIntegral
+encodeW32 :: Word32 -> Either AssemblyError BS.ByteString
+encodeW32 = pure . Bin.runPut . Bin.putWord32le . fromIntegral
 
-instance Encodable Int8 where
-  encode _ = pure . Bin.runPut . Bin.putWord8 . fromIntegral
+encodeI8W8 :: Int8 -> Either AssemblyError BS.ByteString
+encodeI8W8 = pure . Bin.runPut . Bin.putWord8 . fromIntegral
 
 -- Example of encoding an absolute reference to an address
 encodeAbsolute
-  :: (Address address)
-  => PositionInfo address
-  -> SolvedReference Word32
+  :: SolvedReference Word32
   -> Either AssemblyError BS.ByteString
-encodeAbsolute pos (SolvedIA addr)         = encode pos addr
-encodeAbsolute pos (SolvedRelativeVA addr) = encode pos addr
-encodeAbsolute pos (SolvedVA addr)         = encode pos addr
+encodeAbsolute (SolvedIA addr)         = encodeW32 addr
+encodeAbsolute (SolvedRelativeVA addr) = encodeW32 addr
+encodeAbsolute (SolvedVA addr)         = encodeW32 addr
 
 -- Example of encoding a relative reference to an address.
 -- If the offset exceeds 1 byte signed integer then error out with overflow.
@@ -68,22 +66,21 @@ encodeRelative
   => PositionInfo address
   -> SolvedReference Word32
   -> Either AssemblyError BS.ByteString
-encodeRelative pos@PositionInfo {..} solvedReference
-    = go solvedReference >>= encodeInt8
+encodeRelative PositionInfo {..} solvedReference
+    = downcastEncode $ delta solvedReference
   where
-    go (SolvedIA targetAddr)
-      = safeDowncast (fromIntegral targetAddr - fromIntegral piIA)
-    go (SolvedRelativeVA targetAddr)
-      = safeDowncast (fromIntegral targetAddr - fromIntegral piRelativeVA)
-    go (SolvedVA targetAddr)
-      = safeDowncast (fromIntegral targetAddr - fromIntegral piVA)
-    encodeInt8 :: Int8 -> Either AssemblyError BS.ByteString
-    encodeInt8 = encode pos
+    delta (SolvedIA targetAddr)
+      = fromIntegral targetAddr - fromIntegral piIA
+    delta (SolvedRelativeVA targetAddr)
+      = fromIntegral targetAddr - fromIntegral piRelativeVA
+    delta (SolvedVA targetAddr)
+      = fromIntegral targetAddr - fromIntegral piVA
+    downcastEncode i = safeDowncast i >>= encodeI8W8
 
 instance Encodable (TestOpcode (SolvedReference Word32)) where
-  encode addressInfo (JumpAbsolute ref)
+  encode _ (JumpAbsolute ref)
     = do
-      addr <- encodeAbsolute addressInfo ref
+      addr <- encodeAbsolute ref
       pure $ BS.pack [0x01] <> addr
   encode pos (JumpRelative ref)
     = do
@@ -113,8 +110,7 @@ main = hspec $
         assembleAtoms [AOp (JumpAbsolute (RefVA "missing"))]
 
     it "Address encoding is 32 bit Little Endian" $
-      encode (PositionInfo (0 :: Word32) (0 :: Word32) (0 :: Word32))
-        (0x100 :: Word32)
+      encodeW32 0x100
         `shouldBe` Right (BS.pack [0x00, 0x01, 0x00, 0x00])
 
     it "A RefVA reference should return the virtual address 0x100 for top" $
