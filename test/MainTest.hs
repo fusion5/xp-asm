@@ -46,8 +46,6 @@ instance ByteSized TestOpcode where
 instance Address Word32
 
 -- Example of encoding of an address
--- Example of encoding a relative reference to an address.
--- If the offset exceeds 1 byte signed integer then error out with overflow.
 encodeAbsoluteW32
   :: Address addr
   => SolvedReference addr
@@ -56,6 +54,8 @@ encodeAbsoluteW32 (SolvedIA a)         = safeDowncast (fromIntegral a) >>= encod
 encodeAbsoluteW32 (SolvedRelativeVA a) = safeDowncast (fromIntegral a) >>= encodeW32
 encodeAbsoluteW32 (SolvedVA a)         = safeDowncast (fromIntegral a) >>= encodeW32
 
+-- Example of encoding a relative reference to an address.
+-- If the offset exceeds 1 byte signed integer then error out with overflow.
 encodeRelativeW8
   :: Address addr
   => PositionInfo addr
