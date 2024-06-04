@@ -59,12 +59,8 @@ addOffsets Config {..} a@PositionInfo {..} op
 
 -- | Extract all labels in the sequence in a Map. The key is the label and the
 -- value is positional information (PositionInfo)
-scanLabels
-  ::
-  ( Address address
-  , Functor op
-  , ByteSized op
-  )
+scanLabels 
+  :: (Address address, Functor op, ByteSized op)
   => Config address
   -> Seq.Seq (Atom (op Reference))
   -> Either AssemblyError (Map.Map LabelText (PositionInfo address))
@@ -137,10 +133,7 @@ solveAtomReferences _ labelDictionary s@StateReferenceSolve {..} = go
 -- | Encode solved references to ByteString. Keeps track of current positions
 encodeSolved
   :: forall op address
-  .  ( Address address
-     , ByteSized op
-     , Encodable op
-     )
+  .  (Address address, ByteSized op, Encodable op)
   => Config address
   -> Seq.Seq (Atom (op (SolvedReference address)))
   -> Either AssemblyError BS.ByteString
@@ -163,12 +156,7 @@ encodeSolved c@Config {..} atoms
           }
 
 assemble
-  ::
-  ( Address address
-  , Traversable op
-  , ByteSized op
-  , Encodable op
-  )
+  :: (Address address, Traversable op, ByteSized op, Encodable op)
   => Config address
   -> Seq.Seq (Atom (op Reference))
   -> Either AssemblyError BS.ByteString
