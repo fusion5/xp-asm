@@ -114,7 +114,7 @@ solveAtomReferences
   -> StateReferenceSolve op address
   -> Atom (op Reference)
   -> Either AssemblyError (StateReferenceSolve op address)
-solveAtomReferences Config {..} labelDictionary s@StateReferenceSolve {..} = go
+solveAtomReferences _ labelDictionary s@StateReferenceSolve {..} = go
   where
     go (AOp opUnsolved) = do
       opSolved <- AOp <$> Prelude.mapM solveReference opUnsolved
