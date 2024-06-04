@@ -45,11 +45,11 @@ class ByteSized f where
 
 -- | Define the encoding of opcodes outside of the library.
 -- | Why not use the Binary class? It doesn't easily allow nice error handling.
-class Encodable a where
+class Encodable op where
   encode
     :: Address address
-    => PositionInfo address -- needed to compute certain offsets
-    -> a -- what to encode
+    => PositionInfo address         -- needed to compute offsets
+    -> op (SolvedReference address) -- what to encode, with solved references
     -> Either AssemblyError BS.ByteString
 
 -- | Memory / program addresses have certain constraints
@@ -86,11 +86,11 @@ data SolvedReference address
   | SolvedVA address
 
 -- | An Atom is either an operation (typically called opcode) or a label.
-data Atom operation
-  = -- | The operation type is a subset of the instruction set, e.g. for x86
+data Atom op
+  = -- | The op type is a subset of the instruction set, e.g. for x86
     -- jmp, mov, etc. which can be polymorphic in the representation of
     -- address references
-    AOp operation
+    AOp op
   | -- | A Label helps to refer to the program point where it is included
     -- by name
     ALabel LabelText
@@ -100,11 +100,6 @@ data Atom operation
     -- | Doesn't emit code but aligns both VA and RVA to a specified alignment
     -- | AAlignVA Natural
   deriving (Show, Eq, Generic)
-
-instance Encodable operation => Encodable (Atom operation)
-  where
-    encode pos (AOp op)   = encode pos op
-    encode _   (ALabel _) = pure mempty
 
 -- | Constant parameters for the assembler.
 data Config address
@@ -132,7 +127,7 @@ data StateLabelScan address
 
 -- | The reference solver uses the Map of labels and their address information
 -- to solve references to labels. this is its state
-data StateReferenceSolve op address
+newtype StateReferenceSolve op address
   = StateReferenceSolve
     { asrsAtoms :: Seq.Seq (Atom (op (SolvedReference address)))
     }

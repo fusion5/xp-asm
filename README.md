@@ -54,8 +54,22 @@ Add/test objects that add to RVA but not to IA
   obtain VA by adding the image base address
   OK
 
+- The Address class should have encodeAbsolute and encodeRelative functions
+  NOK, we get into trouble with wrappers and other complications. When dealing
+  with the encoding of addresses we should just use custom functions, type 
+  classes don't add much value:
+  -- class (...) => Address a where
+  --   encodeAbsolute
+  --     :: SolvedReference a -> Either AssemblyError BS.ByteString
+  --   encodeRelative
+  --     :: Address b
+  --     => PositionInfo b
+  --     -> SolvedReference a
+  --     -> Either AssemblyError BS.ByteString
+
+- Try to make Encodable f :: * -> * and with "f address" 
+  OK this works well, and also Atom required the same refactoring
+
 *** Activity stack
 
-- The Address class should have encodeAbsolute and encodeRelative functions
-- Try to make Encodable f :: * -> * and with "f address" 
 - Add alignment feature, AAlignIA, AAlignVA

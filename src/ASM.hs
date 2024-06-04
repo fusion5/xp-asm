@@ -139,7 +139,8 @@ encodeSolved
   :: forall op address
   .  ( Address address
      , ByteSized op
-     , Encodable (op (SolvedReference address)))
+     , Encodable op
+     )
   => Config address
   -> Seq.Seq (Atom (op (SolvedReference address)))
   -> Either AssemblyError BS.ByteString
@@ -166,7 +167,7 @@ assemble
   ( Address address
   , Traversable op
   , ByteSized op
-  , Encodable (op (SolvedReference address))
+  , Encodable op
   )
   => Config address
   -> Seq.Seq (Atom (op Reference))

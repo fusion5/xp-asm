@@ -45,29 +45,24 @@ instance ByteSized TestOpcode where
 
 instance Address Word32
 
-encodeW32 :: Word32 -> Either AssemblyError BS.ByteString
-encodeW32 = pure . Bin.runPut . Bin.putWord32le . fromIntegral
-
-encodeI8W8 :: Int8 -> Either AssemblyError BS.ByteString
-encodeI8W8 = pure . Bin.runPut . Bin.putWord8 . fromIntegral
-
--- Example of encoding an absolute reference to an address
-encodeAbsolute
-  :: SolvedReference Word32
-  -> Either AssemblyError BS.ByteString
-encodeAbsolute (SolvedIA addr)         = encodeW32 addr
-encodeAbsolute (SolvedRelativeVA addr) = encodeW32 addr
-encodeAbsolute (SolvedVA addr)         = encodeW32 addr
-
+-- Example of encoding of an address
 -- Example of encoding a relative reference to an address.
 -- If the offset exceeds 1 byte signed integer then error out with overflow.
-encodeRelative
-  :: (Address address)
-  => PositionInfo address
-  -> SolvedReference Word32
+encodeAbsoluteW32
+  :: Address addr
+  => SolvedReference addr
   -> Either AssemblyError BS.ByteString
-encodeRelative PositionInfo {..} solvedReference
-    = downcastEncode $ delta solvedReference
+encodeAbsoluteW32 (SolvedIA a)         = safeDowncast (fromIntegral a) >>= encodeW32
+encodeAbsoluteW32 (SolvedRelativeVA a) = safeDowncast (fromIntegral a) >>= encodeW32
+encodeAbsoluteW32 (SolvedVA a)         = safeDowncast (fromIntegral a) >>= encodeW32
+
+encodeRelativeW8
+  :: Address addr
+  => PositionInfo addr
+  -> SolvedReference addr
+  -> Either AssemblyError BS.ByteString
+encodeRelativeW8 PositionInfo {..} solvedReference
+  = downcastEncode $ delta solvedReference
   where
     delta (SolvedIA targetAddr)
       = fromIntegral targetAddr - fromIntegral piIA
@@ -77,14 +72,20 @@ encodeRelative PositionInfo {..} solvedReference
       = fromIntegral targetAddr - fromIntegral piVA
     downcastEncode i = safeDowncast i >>= encodeI8W8
 
-instance Encodable (TestOpcode (SolvedReference Word32)) where
+encodeW32 :: Word32 -> Either AssemblyError BS.ByteString
+encodeW32 = pure . Bin.runPut . Bin.putWord32le . fromIntegral
+
+encodeI8W8 :: Int8 -> Either AssemblyError BS.ByteString
+encodeI8W8 = pure . Bin.runPut . Bin.putWord8 . fromIntegral
+
+instance Encodable TestOpcode where
   encode _ (JumpAbsolute ref)
     = do
-      addr <- encodeAbsolute ref
+      addr <- encodeAbsoluteW32 ref
       pure $ BS.pack [0x01] <> addr
   encode pos (JumpRelative ref)
     = do
-      addr <- encodeRelative pos ref
+      addr <- encodeRelativeW8 pos ref
       pure $ BS.pack [0x02] <> addr
   encode _ Noop
     = pure $ BS.pack [0x03, 0x03]
