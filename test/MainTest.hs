@@ -254,7 +254,7 @@ main = hspec $
     shouldBeBytes (Right got) expected
       = BSByteShow got `shouldBe` BSByteShow (BS.pack expected)
     shouldBeBytes got expected
-      = shouldBe got (Right (BS.pack expected))
+      = got `shouldBe` (Right (BS.pack expected))
 
     shouldBeError
       :: HasCallStack
