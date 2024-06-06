@@ -73,8 +73,8 @@ _alignIA n a@PositionInfo {..}
 -- | How many bytes to add to reach a multiple of n
 safeAlign :: Address a => a -> Natural -> Either AssemblyError Natural
 safeAlign _       0 = Left AlignTo0
-safeAlign address n = -- assert (n >= exceed) $ Right (n - exceed)
-    assert (n >= exceed) $ Right $
+safeAlign address n = Right $
+    assert (n >= exceed) $
       if exceed == 0
         then 0
         else n - exceed
