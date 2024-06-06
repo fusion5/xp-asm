@@ -79,3 +79,5 @@ Add/test objects that add to RVA but not to IA
 - sizeIA and sizeRVA should return a Natural
   if they would take the current position, they could be used to implement alignment
   (so no need for AlignIA/AlignRVA atoms).
+- Refactoring idea, maybe: merge encodable and bytesized into a single class
+  with a single type that returns bytes (if the address is resolved) and ia/va sizes (always)
