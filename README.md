@@ -76,3 +76,6 @@ Add/test objects that add to RVA but not to IA
 
 - Add alignment feature, AAlignIA, AAlignVA
 - Refactor tests
+- sizeIA and sizeRVA should return a Natural
+  if they would take the current position, they could be used to implement alignment
+  (so no need for AlignIA/AlignRVA atoms).
