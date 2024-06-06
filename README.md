@@ -70,6 +70,9 @@ Add/test objects that add to RVA but not to IA
 - Try to make Encodable f :: * -> * and with "f address" 
   OK this works well, and also Atom required the same refactoring
 
+2024-06-06
+
 *** Activity stack
 
 - Add alignment feature, AAlignIA, AAlignVA
+- Refactor tests

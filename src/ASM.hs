@@ -4,6 +4,7 @@ module ASM
 , safePlus
 , safeMinus
 , safeDowncast
+, safeAlign -- exported for tests
 ) where
 
 import Common
@@ -57,9 +58,33 @@ addOffsets Config {..} a@PositionInfo {..} op
       , piVA         = newVA
       }
 
+_alignIA
+  :: (Address address)
+  => Natural
+  -> PositionInfo address
+  -> Either AssemblyError (PositionInfo address)
+_alignIA n a@PositionInfo {..}
+  = do
+    toAddNat <- piIA `safeAlign` n
+    toAdd    <- safeDowncast (fromIntegral toAddNat)
+    newIA    <- toAdd `safePlus` piIA
+    pure $ a { piIA = newIA }
+
+-- | How many bytes to add to reach a multiple of n
+safeAlign :: Address a => a -> Natural -> Either AssemblyError Natural
+safeAlign _       0 = Left AlignTo0
+safeAlign address n = -- assert (n >= exceed) $ Right (n - exceed)
+    assert (n >= exceed) $ Right $
+      if exceed == 0
+        then 0
+        else n - exceed
+  where
+    exceed :: Natural
+    exceed = fromIntegral address `mod` n
+
 -- | Extract all labels in the sequence in a Map. The key is the label and the
 -- value is positional information (PositionInfo)
-scanLabels 
+scanLabels
   :: (Address address, Functor op, ByteSized op)
   => Config address
   -> Seq.Seq (Atom (op Reference))
@@ -71,13 +96,12 @@ scanLabels c@Config {..} atoms = aslsLabels <$> foldM scan initialState atoms
 
     scan s@StateLabelScan {..} (AOp op) = do
       newPosition <- addOffsets c asPosition op
-      pure s
-        { asPosition = newPosition
-        }
+      pure s { asPosition = newPosition }
     scan s@StateLabelScan {..} (ALabel labelText) =
-      pure s
-        { aslsLabels = Map.insert labelText asPosition aslsLabels
-        }
+      pure s { aslsLabels = Map.insert labelText asPosition aslsLabels }
+    -- scan s@StateLabelScan {..} (AAlignIA n) = do
+    --   newPosition <- alignIA asPosition
+    --   pure s {  asPosition = newPosition}
 
 safePlus :: (Address a) => a -> a -> Either AssemblyError a
 safePlus = boundedBinopMapEx (Arithmetic . ExceptionWrap) B.plusBounded

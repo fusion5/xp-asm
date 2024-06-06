@@ -97,6 +97,7 @@ defaultConfig = Config {..}
   where
     acVirtualBaseAddress = 0x100
 
+
 main :: IO ()
 main = hspec $
   do
@@ -244,7 +245,24 @@ main = hspec $
           , ALabel "bottom"
           ]
 
+    it "Aligment tests" $ do
+      safeAlignW32 0 0        `shouldBe` Left AlignTo0
+      safeAlignW32 1 0        `shouldBe` Left AlignTo0
+      safeAlignW32 maxBound 0 `shouldBe` Left AlignTo0
+      safeAlignW32 0 1        `shouldBe` Right 0
+      safeAlignW32 maxBound 1 `shouldBe` Right 0
+      safeAlignW32 1 2        `shouldBe` Right 1
+      safeAlignW32 2 2        `shouldBe` Right 0
+      safeAlignW32 3 2        `shouldBe` Right 1
+      safeAlignW32 maxBound (maxWord32 - 1) `shouldBe` Right (maxWord32 - 2)
+      safeAlignW32 maxBound (maxWord32 + 1) `shouldBe` Right 1
+      safeAlignW32 maxBound (2 * maxWord32) `shouldBe` Right maxWord32
+
   where
+    maxWord32 :: Natural
+    maxWord32 = fromIntegral (maxBound :: Word32)
+    safeAlignW32 :: Word32 -> Natural -> Either AssemblyError Natural
+    safeAlignW32 = safeAlign
     -- Wraps the bytestring to produce different show output
     shouldBeBytes
       :: HasCallStack

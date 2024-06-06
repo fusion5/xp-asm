@@ -22,6 +22,7 @@ data AssemblyError
   | ReferenceTypeNotSupportedInOpcode Text.Text
   | OpcodeToByteString AssemblyError
   | InternalError Text.Text
+  | AlignTo0
   deriving (Show, Eq)
 
 instance Exception.Exception AssemblyError
@@ -95,9 +96,9 @@ data Atom op
     -- by name
     ALabel LabelText
   -- | -- | Emit as many zeroes as needed to reach a multiple given as parameter.
-    -- Note that it doesn't alter virtual addresses.
-    -- AAlignIA Natural
-    -- | Doesn't emit code but aligns both VA and RVA to a specified alignment
+  --   -- Note that it doesn't alter virtual addresses.
+  --   AAlignIA Natural
+    -- -- | Doesn't emit code but aligns both VA and RVA to a specified alignment
     -- | AAlignVA Natural
   deriving (Show, Eq, Generic)
 
