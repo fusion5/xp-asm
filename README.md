@@ -81,11 +81,13 @@ Add/test objects that add to RVA but not to IA
 - Try PositionInfo with Naturals as offsets
     OK
 
+- Some addresses in tests should be word8, add overflow tests
+    OK
+
 *** Activity stack
 
 - Add alignment feature, AAlignIA, AAlignVA
-- Addresses in tests should be word8, and add overflow tests
-- Refactor tests
+- Refactor tests (opcode-like and offsets in different types)
 - sizeIA and sizeRVA should return a Natural
   if they would take the current position, they could be used to implement alignment
   (so no need for AlignIA/AlignRVA atoms).
