@@ -74,6 +74,8 @@ Add/test objects that add to RVA but not to IA
 
 *** Activity stack
 
+- Merge SolvedReference and Reference
+- sizeIA and sizeRVA should be in Encodable
 - Add alignment feature, AAlignIA, AAlignVA
 - Refactor tests
 - sizeIA and sizeRVA should return a Natural
