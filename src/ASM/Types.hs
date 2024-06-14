@@ -6,7 +6,6 @@ import Common
 
 import qualified Control.Exception as Exception
 import qualified Data.ByteString.Lazy as BS
-import qualified Data.Int as Int
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Text as Text
@@ -23,6 +22,7 @@ data AssemblyError
   | OpcodeToByteString AssemblyError
   | InternalError Text.Text
   | AlignTo0
+  | NegativeToNatural
   deriving (Show, Eq)
 
 instance Exception.Exception AssemblyError
@@ -38,20 +38,16 @@ instance Eq SomeExceptionWrap where
 
 type LabelText = Text.Text
 
--- TODO: consider Foreign.Storable, add the 'alignment' method
--- TODO: The size might not always be Int64...
-class ByteSized f where
-  sizeIA  :: f a -> Int.Int64
-  sizeRVA :: f a -> Int.Int64
-
 -- | Define the encoding of opcodes outside of the library.
 -- | Why not use the Binary class? It doesn't easily allow nice error handling.
 class Encodable op where
   encode
     :: Address address
-    => PositionInfo address         -- needed to compute offsets
+    => PositionInfo address   -- needed to compute offsets
     -> op (Reference address) -- what to encode, with solved references
     -> Either AssemblyError BS.ByteString
+  sizeIA  :: op a -> Natural -- todo: add PosInfo?
+  sizeRVA :: op a -> Natural
 
 -- | Memory / program addresses have certain constraints
 class (Integral a, Ord a, Bounded a) => Address a where

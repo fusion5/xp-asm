@@ -26,7 +26,7 @@ import qualified Control.Exception as Exception
 --  3. encode solved references as ByteString
 --
 -- The module is polymorphic on a data type typically denotated with 'op', which
--- implements type classes 'Encodable' and 'ByteSized'. Values of this datatype
+-- implements type class 'Encodable'. Values of this datatype
 -- in a sequence are elements that can be converted to a binary format. The
 -- module facilitates outputting several types of references to other 'op'
 -- elements in the sequence by means of the 'Reference' type.
@@ -42,7 +42,7 @@ boundedBinopMapEx ex op o1 o2
   = Either.mapLeft ex $ op o1 o2
 
 addOffsets
-  :: (ByteSized op, Address address)
+  :: (Encodable op, Address address)
   => Config address
   -> PositionInfo address
   -> op a
@@ -85,7 +85,7 @@ safeAlign address n = Right $
 -- | Extract all labels in the sequence in a Map. The key is the label and the
 -- value is positional information (PositionInfo)
 scanLabels
-  :: (Address address, Functor op, ByteSized op)
+  :: (Address address, Functor op, Encodable op)
   => Config address
   -> Seq.Seq (Atom (op (Reference LabelText)))
   -> Either AssemblyError (Map.Map LabelText (PositionInfo address))
@@ -113,9 +113,13 @@ safeDowncast :: (Integral a, Bounded a) => Integer -> Either AssemblyError a
 safeDowncast = Either.mapLeft (Arithmetic . ExceptionWrap)
              . B.fromIntegerBounded
 
+safeNaturalDowncast :: Integer -> Either AssemblyError Natural
+safeNaturalDowncast n | n < 0 = Left NegativeToNatural
+safeNaturalDowncast n = Right $ fromIntegral n
+
 -- | Solve label references to dictionary addresses.
 solveReferences
-  :: (Traversable op, Address address, ByteSized op)
+  :: (Traversable op, Address address, Encodable op)
   => Config address
   -> Map.Map LabelText (PositionInfo address)
   -> Seq.Seq (Atom (op (Reference LabelText)))
@@ -128,7 +132,7 @@ solveReferences c labelDictionary atoms
 
 -- | Solve references possibly present in an Atom
 solveAtomReferences
-  :: (Traversable op, Address address, ByteSized op)
+  :: (Traversable op, Address address, Encodable op)
   => Config address
   -> Map.Map LabelText (PositionInfo address)
   -> StateReferenceSolve op address
@@ -157,7 +161,7 @@ solveAtomReferences _ labelDictionary s@StateReferenceSolve {..} = go
 -- | Encode solved references to ByteString. Keeps track of current positions
 encodeSolved
   :: forall op address
-  .  (Address address, ByteSized op, Encodable op)
+  .  (Address address, Encodable op)
   => Config address
   -> Seq.Seq (Atom (op (Reference address)))
   -> Either AssemblyError BS.ByteString
@@ -171,7 +175,7 @@ encodeSolved c@Config {..} atoms
     encodeAtom s@StateEncodeSolved {..} (AOp op)
       = do
         encodedOp   <- encode sesPosition op
-        opLength    <- safeDowncast $ fromIntegral $ BS.length encodedOp
+        opLength    <- safeNaturalDowncast $ fromIntegral $ BS.length encodedOp
         newPosition <- assert (sizeRVA op == opLength) $
           addOffsets c sesPosition op
         pure s
@@ -180,7 +184,7 @@ encodeSolved c@Config {..} atoms
           }
 
 assemble
-  :: (Address address, Traversable op, ByteSized op, Encodable op)
+  :: (Address address, Traversable op, Encodable op)
   => Config address
   -> Seq.Seq (Atom (op (Reference LabelText)))
   -> Either AssemblyError BS.ByteString

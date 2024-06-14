@@ -29,20 +29,6 @@ newtype BSByteShow = BSByteShow BS.ByteString deriving (Eq)
 instance Show BSByteShow where
   show (BSByteShow bs) = show (BS.unpack bs)
 
--- | Warning, this should match the Encodable lengths...
--- ByteSized and Encodable are separate to reflect that label references are of
--- known size, but their encoding is not obtainable until resolved
-instance ByteSized TestOpcode where
-  sizeRVA (JumpAbsolute _) = 1 + 4
-  sizeRVA (JumpRelative _) = 1 + 1
-  sizeRVA Noop         = 2
-  sizeRVA (IAOffset _) = 0
-
-  sizeIA (JumpAbsolute _)  = 1 + 4
-  sizeIA (JumpRelative _)  = 1 + 1
-  sizeIA Noop         = 2
-  sizeIA (IAOffset n) = fromIntegral n
-
 instance Address Word32
 
 -- Example of encoding of an address
@@ -91,6 +77,18 @@ instance Encodable TestOpcode where
     = pure $ BS.pack [0x03, 0x03]
   encode _ (IAOffset _)
     = pure ""
+
+  -- | Warning, this should match the Encodable lengths...
+  sizeRVA (JumpAbsolute _) = 1 + 4
+  sizeRVA (JumpRelative _) = 1 + 1
+  sizeRVA Noop         = 2
+  sizeRVA (IAOffset _) = 0
+
+  sizeIA (JumpAbsolute _)  = 1 + 4
+  sizeIA (JumpRelative _)  = 1 + 1
+  sizeIA Noop         = 2
+  sizeIA (IAOffset n) = fromIntegral n
+
 
 defaultConfig :: Config Word32
 defaultConfig = Config {..}
