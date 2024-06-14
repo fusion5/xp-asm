@@ -288,8 +288,8 @@ main = hspec $
         `shouldBeBytes` [0x02, 0x7F]
 
     it "Relative image reference overflow (0x80)" $
-      -- Overflow not because of the address (Word32) but because of the size
-      -- of the instruction (Word8)
+      -- Overflow not because of the address (Word32) but because of
+      -- instruction bounds (int8)
       shouldBeError $
         assembleAtomsW32
           [ AOp (JumpRelativeW8 (RefIA "bottom"))
