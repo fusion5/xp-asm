@@ -87,7 +87,9 @@ Add/test objects that add to RVA but not to IA
 *** Activity stack
 
 - Add alignment feature, AAlignIA, AAlignVA
-- Refactor tests (opcode-like and offsets in different types)
+- Refactor tests 
+    - opcode-like and offsets in different types
+    - organise into functions, different kinds of imaginable overflows
 - sizeIA and sizeRVA should return a Natural
   if they would take the current position, they could be used to implement alignment
   (so no need for AlignIA/AlignRVA atoms).
