@@ -75,10 +75,16 @@ Add/test objects that add to RVA but not to IA
 - Merge SolvedReference and Reference
     OK
 
+- sizeIA and sizeRVA should be in Encodable
+    OK
+
+- Try PositionInfo with Naturals as offsets
+    OK
+
 *** Activity stack
 
-- sizeIA and sizeRVA should be in Encodable
 - Add alignment feature, AAlignIA, AAlignVA
+- Addresses in tests should be word8, and add overflow tests
 - Refactor tests
 - sizeIA and sizeRVA should return a Natural
   if they would take the current position, they could be used to implement alignment

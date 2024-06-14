@@ -43,7 +43,7 @@ type LabelText = Text.Text
 class Encodable op where
   encode
     :: Address address
-    => PositionInfo address   -- needed to compute offsets
+    => PositionInfo           -- needed to compute offsets
     -> op (Reference address) -- what to encode, with solved references
     -> Either AssemblyError BS.ByteString
   sizeIA  :: op a -> Natural -- todo: add PosInfo?
@@ -52,16 +52,16 @@ class Encodable op where
 -- | Memory / program addresses have certain constraints
 class (Integral a, Ord a, Bounded a) => Address a where
 
-data PositionInfo address
+data PositionInfo
   = PositionInfo
   { -- | Image Address e.g. of a label (in-file address, offset from the
     -- beginning of the file)
-    piIA  :: address
+    piIA  :: Natural
   , -- | Relative Virtual Address e.g. of a label (in-memory address minus
     -- image base address)
-    piRelativeVA :: address
+    piRelativeVA :: Natural
   , -- | Virtual address e.g. of a label
-    piVA :: address
+    piVA :: Natural
   }
 
 -- The type of references and solved references defined here must cover the
@@ -112,9 +112,9 @@ data StateLabelScan address
       --     memory. This is initially 0 and it is often refered to as RVA
       --     (Relative Value Address) in Microsoft documentation.
       --   - Current memory address
-      asPosition :: PositionInfo address
+      asPosition :: PositionInfo
       -- | Encountered labels so far
-    , aslsLabels :: Map.Map LabelText (PositionInfo address)
+    , aslsLabels :: Map.Map LabelText PositionInfo
     }
 
 -- | The reference solver uses the Map of labels and their address information
@@ -126,6 +126,6 @@ newtype StateReferenceSolve op address
 
 data StateEncodeSolved address
   = StateEncodeSolved
-    { sesPosition :: PositionInfo address
+    { sesPosition :: PositionInfo
     , sesEncoded  :: BS.ByteString
     }

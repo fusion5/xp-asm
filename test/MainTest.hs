@@ -44,7 +44,7 @@ encodeAbsoluteW32 (RefVA a)         = safeDowncast (fromIntegral a) >>= encodeW3
 -- If the offset exceeds 1 byte signed integer then error out with overflow.
 encodeRelativeW8
   :: Address addr
-  => PositionInfo addr
+  => PositionInfo
   -> Reference addr
   -> Either AssemblyError BS.ByteString
 encodeRelativeW8 PositionInfo {..} solvedReference
@@ -244,33 +244,30 @@ main = hspec $
           ]
 
     it "Aligment tests" $ do
-      safeAlignW32 0 0        `shouldBe` Left AlignTo0
-      safeAlignW32 1 0        `shouldBe` Left AlignTo0
-      safeAlignW32 maxBound 0 `shouldBe` Left AlignTo0
-      safeAlignW32 0 1        `shouldBe` Right 0
-      safeAlignW32 maxBound 1 `shouldBe` Right 0
-      safeAlignW32 1 2        `shouldBe` Right 1
-      safeAlignW32 2 2        `shouldBe` Right 0
-      safeAlignW32 3 2        `shouldBe` Right 1
-      safeAlignW32 maxBound (maxWord32 - 1) `shouldBe` Right (maxWord32 - 2)
-      safeAlignW32 maxBound (maxWord32 + 1) `shouldBe` Right 1
-      safeAlignW32 maxBound (2 * maxWord32) `shouldBe` Right maxWord32
+      safeAlignW8 0 0        `shouldBe` Left AlignTo0
+      safeAlignW8 1 0        `shouldBe` Left AlignTo0
+      safeAlignW8 maxBound 0 `shouldBe` Left AlignTo0
+      safeAlignW8 0 1        `shouldBe` Right 0
+      safeAlignW8 maxBound 1 `shouldBe` Right 0
+      safeAlignW8 1 2        `shouldBe` Right 1
+      safeAlignW8 2 2        `shouldBe` Right 0
+      safeAlignW8 3 2        `shouldBe` Right 1
+      safeAlignW8 maxBound (maxWord8 - 1) `shouldBe` Right (maxWord8 - 2)
+      safeAlignW8 maxBound (maxWord8 + 1) `shouldBe` Right 1
+      safeAlignW8 maxBound (2 * maxWord8) `shouldBe` Right maxWord8
 
   where
-    maxWord32 :: Natural
-    maxWord32 = fromIntegral (maxBound :: Word32)
-    safeAlignW32 :: Word32 -> Natural -> Either AssemblyError Natural
-    safeAlignW32 = safeAlign
+    maxWord8 :: Natural
+    maxWord8 = fromIntegral (maxBound :: Word8)
+    safeAlignW8 :: Word8 -> Natural -> Either AssemblyError Natural
+    safeAlignW8 w8 n = fromIntegral w8 `safeAlign` n
     -- Wraps the bytestring to produce different show output
     shouldBeBytes
-      :: HasCallStack
-      => Either AssemblyError BS.ByteString
-      -> [Word8]
-      -> IO ()
+      :: HasCallStack => Either AssemblyError BS.ByteString -> [Word8] -> IO ()
     shouldBeBytes (Right got) expected
       = BSByteShow got `shouldBe` BSByteShow (BS.pack expected)
     shouldBeBytes got expected
-      = got `shouldBe` (Right (BS.pack expected))
+      = got `shouldBe` Right (BS.pack expected)
 
     shouldBeError
       :: HasCallStack

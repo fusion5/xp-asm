@@ -44,34 +44,29 @@ boundedBinopMapEx ex op o1 o2
 addOffsets
   :: (Encodable op, Address address)
   => Config address
-  -> PositionInfo address
+  -> PositionInfo
   -> op a
-  -> Either AssemblyError (PositionInfo address)
+  -> Either AssemblyError PositionInfo
 addOffsets Config {..} a@PositionInfo {..} op
   = do
-    newIA  <- (fromIntegral . sizeIA)  op `safePlus` piIA
-    newRVA <- (fromIntegral . sizeRVA) op `safePlus` piRelativeVA
-    newVA  <- acVirtualBaseAddress        `safePlus` newRVA
+    baseAddress <- safeNaturalDowncast $ fromIntegral acVirtualBaseAddress
     pure $ a
-      { piIA         = newIA
-      , piRelativeVA = newRVA
-      , piVA         = newVA
+      { piIA         = piIA         + sizeIA op
+      , piRelativeVA = piRelativeVA + sizeRVA op
+      , piVA         = piRelativeVA + sizeRVA op + baseAddress
       }
 
 _alignIA
-  :: (Address address)
-  => Natural
-  -> PositionInfo address
-  -> Either AssemblyError (PositionInfo address)
+  :: Natural
+  -> PositionInfo
+  -> Either AssemblyError PositionInfo
 _alignIA n a@PositionInfo {..}
   = do
     toAddNat <- piIA `safeAlign` n
-    toAdd    <- safeDowncast (fromIntegral toAddNat)
-    newIA    <- toAdd `safePlus` piIA
-    pure $ a { piIA = newIA }
+    pure $ a { piIA = piIA + toAddNat }
 
 -- | How many bytes to add to reach a multiple of n
-safeAlign :: Address a => a -> Natural -> Either AssemblyError Natural
+safeAlign :: Natural -> Natural -> Either AssemblyError Natural
 safeAlign _       0 = Left AlignTo0
 safeAlign address n = Right $
     assert (n >= exceed) $
@@ -88,11 +83,13 @@ scanLabels
   :: (Address address, Functor op, Encodable op)
   => Config address
   -> Seq.Seq (Atom (op (Reference LabelText)))
-  -> Either AssemblyError (Map.Map LabelText (PositionInfo address))
-scanLabels c@Config {..} atoms = aslsLabels <$> foldM scan initialState atoms
+  -> Either AssemblyError (Map.Map LabelText PositionInfo)
+scanLabels c@Config {..} atoms = do
+  baseAddress <- safeNaturalDowncast $ fromIntegral acVirtualBaseAddress
+  aslsLabels <$> foldM scan (initialState baseAddress) atoms
   where
-    initialState = StateLabelScan
-      (PositionInfo minBound minBound acVirtualBaseAddress) Map.empty
+    initialState baseAddress = StateLabelScan
+      (PositionInfo 0 0 baseAddress) Map.empty
 
     scan s@StateLabelScan {..} (AOp op) = do
       newPosition <- addOffsets c asPosition op
@@ -113,15 +110,17 @@ safeDowncast :: (Integral a, Bounded a) => Integer -> Either AssemblyError a
 safeDowncast = Either.mapLeft (Arithmetic . ExceptionWrap)
              . B.fromIntegerBounded
 
+-- Integer is used and not 'Integral a' in order to solve "Defaulting to type"
+-- warnings
 safeNaturalDowncast :: Integer -> Either AssemblyError Natural
 safeNaturalDowncast n | n < 0 = Left NegativeToNatural
-safeNaturalDowncast n = Right $ fromIntegral n
+safeNaturalDowncast n         = Right $ fromIntegral n
 
 -- | Solve label references to dictionary addresses.
 solveReferences
   :: (Traversable op, Address address, Encodable op)
   => Config address
-  -> Map.Map LabelText (PositionInfo address)
+  -> Map.Map LabelText PositionInfo
   -> Seq.Seq (Atom (op (Reference LabelText)))
   -> Either AssemblyError (Seq.Seq (Atom (op (Reference address))))
 solveReferences c labelDictionary atoms
@@ -132,9 +131,10 @@ solveReferences c labelDictionary atoms
 
 -- | Solve references possibly present in an Atom
 solveAtomReferences
-  :: (Traversable op, Address address, Encodable op)
+  :: forall address op
+  .  (Traversable op, Address address, Encodable op)
   => Config address
-  -> Map.Map LabelText (PositionInfo address)
+  -> Map.Map LabelText PositionInfo
   -> StateReferenceSolve op address
   -> Atom (op (Reference LabelText))
   -> Either AssemblyError (StateReferenceSolve op address)
@@ -147,16 +147,19 @@ solveAtomReferences _ labelDictionary s@StateReferenceSolve {..} = go
         }
     go (ALabel _) = pure s -- self-solve labels? no need, discard them...
 
-    query labelText
-      = Either.maybeToEither (ReferenceMissing labelText)
-          (Map.lookup labelText labelDictionary)
+    query labelText = Either.maybeToEither (ReferenceMissing labelText)
+                        (Map.lookup labelText labelDictionary)
 
+    get labelText f = query labelText >>= safeDowncast . fromIntegral . f
+
+    solveReference
+      :: Reference LabelText -> Either AssemblyError (Reference address)
     solveReference (RefVA labelText) =
-      RefVA . piVA <$> query labelText
+      RefVA         <$> get labelText piVA
     solveReference (RefRelativeVA labelText) =
-      RefRelativeVA . piRelativeVA <$> query labelText
+      RefRelativeVA <$> get labelText piRelativeVA
     solveReference (RefIA labelText) =
-      RefIA . piIA <$> query labelText
+      RefIA         <$> get labelText piIA
 
 -- | Encode solved references to ByteString. Keeps track of current positions
 encodeSolved
@@ -166,10 +169,12 @@ encodeSolved
   -> Seq.Seq (Atom (op (Reference address)))
   -> Either AssemblyError BS.ByteString
 encodeSolved c@Config {..} atoms
-    = sesEncoded <$> foldM encodeAtom initialState atoms
+    = do
+      baseAddress <- safeNaturalDowncast $ fromIntegral acVirtualBaseAddress
+      sesEncoded <$> foldM encodeAtom (initialState baseAddress) atoms
   where
-    initialState = StateEncodeSolved
-      (PositionInfo minBound minBound acVirtualBaseAddress) ""
+    initialState baseAddress = StateEncodeSolved
+      (PositionInfo 0 0 baseAddress) ""
 
     encodeAtom s (ALabel _) = pure s
     encodeAtom s@StateEncodeSolved {..} (AOp op)
