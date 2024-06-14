@@ -87,7 +87,7 @@ safeAlign address n = Right $
 scanLabels
   :: (Address address, Functor op, ByteSized op)
   => Config address
-  -> Seq.Seq (Atom (op Reference))
+  -> Seq.Seq (Atom (op (Reference LabelText)))
   -> Either AssemblyError (Map.Map LabelText (PositionInfo address))
 scanLabels c@Config {..} atoms = aslsLabels <$> foldM scan initialState atoms
   where
@@ -118,8 +118,8 @@ solveReferences
   :: (Traversable op, Address address, ByteSized op)
   => Config address
   -> Map.Map LabelText (PositionInfo address)
-  -> Seq.Seq (Atom (op Reference))
-  -> Either AssemblyError (Seq.Seq (Atom (op (SolvedReference address))))
+  -> Seq.Seq (Atom (op (Reference LabelText)))
+  -> Either AssemblyError (Seq.Seq (Atom (op (Reference address))))
 solveReferences c labelDictionary atoms
     = asrsAtoms <$> foldM (solveAtomReferences c labelDictionary) initialState
         atoms
@@ -132,7 +132,7 @@ solveAtomReferences
   => Config address
   -> Map.Map LabelText (PositionInfo address)
   -> StateReferenceSolve op address
-  -> Atom (op Reference)
+  -> Atom (op (Reference LabelText))
   -> Either AssemblyError (StateReferenceSolve op address)
 solveAtomReferences _ labelDictionary s@StateReferenceSolve {..} = go
   where
@@ -147,19 +147,19 @@ solveAtomReferences _ labelDictionary s@StateReferenceSolve {..} = go
       = Either.maybeToEither (ReferenceMissing labelText)
           (Map.lookup labelText labelDictionary)
 
-    solveReference (RefVA labelText) = do
-      SolvedVA . piVA <$> query labelText
+    solveReference (RefVA labelText) =
+      RefVA . piVA <$> query labelText
     solveReference (RefRelativeVA labelText) =
-      SolvedRelativeVA . piRelativeVA <$> query labelText
+      RefRelativeVA . piRelativeVA <$> query labelText
     solveReference (RefIA labelText) =
-      SolvedIA . piIA <$> query labelText
+      RefIA . piIA <$> query labelText
 
 -- | Encode solved references to ByteString. Keeps track of current positions
 encodeSolved
   :: forall op address
   .  (Address address, ByteSized op, Encodable op)
   => Config address
-  -> Seq.Seq (Atom (op (SolvedReference address)))
+  -> Seq.Seq (Atom (op (Reference address)))
   -> Either AssemblyError BS.ByteString
 encodeSolved c@Config {..} atoms
     = sesEncoded <$> foldM encodeAtom initialState atoms
@@ -182,7 +182,7 @@ encodeSolved c@Config {..} atoms
 assemble
   :: (Address address, Traversable op, ByteSized op, Encodable op)
   => Config address
-  -> Seq.Seq (Atom (op Reference))
+  -> Seq.Seq (Atom (op (Reference LabelText)))
   -> Either AssemblyError BS.ByteString
 assemble cfg input
   = do

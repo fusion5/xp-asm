@@ -48,27 +48,27 @@ instance Address Word32
 -- Example of encoding of an address
 encodeAbsoluteW32
   :: Address addr
-  => SolvedReference addr
+  => Reference addr
   -> Either AssemblyError BS.ByteString
-encodeAbsoluteW32 (SolvedIA a)         = safeDowncast (fromIntegral a) >>= encodeW32
-encodeAbsoluteW32 (SolvedRelativeVA a) = safeDowncast (fromIntegral a) >>= encodeW32
-encodeAbsoluteW32 (SolvedVA a)         = safeDowncast (fromIntegral a) >>= encodeW32
+encodeAbsoluteW32 (RefIA a)         = safeDowncast (fromIntegral a) >>= encodeW32
+encodeAbsoluteW32 (RefRelativeVA a) = safeDowncast (fromIntegral a) >>= encodeW32
+encodeAbsoluteW32 (RefVA a)         = safeDowncast (fromIntegral a) >>= encodeW32
 
 -- Example of encoding a relative reference to an address.
 -- If the offset exceeds 1 byte signed integer then error out with overflow.
 encodeRelativeW8
   :: Address addr
   => PositionInfo addr
-  -> SolvedReference addr
+  -> Reference addr
   -> Either AssemblyError BS.ByteString
 encodeRelativeW8 PositionInfo {..} solvedReference
   = downcastEncode $ delta solvedReference
   where
-    delta (SolvedIA targetAddr)
+    delta (RefIA targetAddr)
       = fromIntegral targetAddr - fromIntegral piIA
-    delta (SolvedRelativeVA targetAddr)
+    delta (RefRelativeVA targetAddr)
       = fromIntegral targetAddr - fromIntegral piRelativeVA
-    delta (SolvedVA targetAddr)
+    delta (RefVA targetAddr)
       = fromIntegral targetAddr - fromIntegral piVA
     downcastEncode i = safeDowncast i >>= encodeI8W8
 
@@ -284,6 +284,6 @@ main = hspec $
     shouldBeError _ = pure ()
 
     assembleAtoms
-      :: [Atom (TestOpcode Reference)]
+      :: [Atom (TestOpcode (Reference LabelText))]
       -> Either AssemblyError BS.ByteString
     assembleAtoms = assemble defaultConfig . Seq.fromList

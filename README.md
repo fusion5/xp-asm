@@ -70,11 +70,13 @@ Add/test objects that add to RVA but not to IA
 - Try to make Encodable f :: * -> * and with "f address" 
   OK this works well, and also Atom required the same refactoring
 
-2024-06-06
+2024-06-14
+
+- Merge SolvedReference and Reference
+    OK
 
 *** Activity stack
 
-- Merge SolvedReference and Reference
 - sizeIA and sizeRVA should be in Encodable
 - Add alignment feature, AAlignIA, AAlignVA
 - Refactor tests

@@ -50,7 +50,7 @@ class Encodable op where
   encode
     :: Address address
     => PositionInfo address         -- needed to compute offsets
-    -> op (SolvedReference address) -- what to encode, with solved references
+    -> op (Reference address) -- what to encode, with solved references
     -> Either AssemblyError BS.ByteString
 
 -- | Memory / program addresses have certain constraints
@@ -70,21 +70,16 @@ data PositionInfo address
 
 -- The type of references and solved references defined here must cover the
 -- needs of all assemblers defined using ASM.
-data Reference
+data Reference address
   = -- | Image Address (in-file address, offset from the beginning of
     -- the file) of label
-    RefIA LabelText
+    RefIA address
   | -- | Relative Virtual Address (in-memory address minus image base
     -- address) of label. In other words relative to the image base address.
-    RefRelativeVA LabelText
+    RefRelativeVA address
   | -- | Virtual Address (in-memory address) of label
-    RefVA LabelText
+    RefVA address
   deriving (Show)
-
-data SolvedReference address
-  = SolvedIA address
-  | SolvedRelativeVA address
-  | SolvedVA address
 
 -- | An Atom is either an operation (typically called opcode) or a label.
 data Atom op
@@ -130,7 +125,7 @@ data StateLabelScan address
 -- to solve references to labels. this is its state
 newtype StateReferenceSolve op address
   = StateReferenceSolve
-    { asrsAtoms :: Seq.Seq (Atom (op (SolvedReference address)))
+    { asrsAtoms :: Seq.Seq (Atom (op (Reference address)))
     }
 
 data StateEncodeSolved address
