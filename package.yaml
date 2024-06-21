@@ -4,6 +4,7 @@ default-extensions:
   - OverloadedStrings
   - DataKinds
   - ScopedTypeVariables
+  - QuasiQuotes
 
 dependencies:
   - base
@@ -18,6 +19,7 @@ dependencies:
   - transformers
   - type-natural
   - vector
+  - interpolatedstring-perl6
 
 ghc-options:
   - -Wall

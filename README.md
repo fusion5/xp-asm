@@ -84,12 +84,25 @@ Add/test objects that add to RVA but not to IA
 - Some addresses in tests should be word8, add overflow tests
     OK
 
+2024-06-21
+
+- Make shouldBeBytes take a bytestring
+    OK
+
+- Abstract absolute reference tests
+    OK
+
+- Abstract label position code
+    OK
+
+- Remove IAOffset and VAOffset opcodes. Replace with Zeroes opcode
+    OK
+
 *** Activity stack
 
-- Add alignment feature, AAlignIA, AAlignVA
+- Abstract relative jump tests
 - Refactor tests 
-    - opcode-like and offsets in different types
-    - organise into functions, different kinds of imaginable overflows
+- Add alignment feature, AAlignIA, AAlignVA
 - sizeIA and sizeRVA should return a Natural
   if they would take the current position, they could be used to implement alignment
   (so no need for AlignIA/AlignRVA atoms).

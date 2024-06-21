@@ -181,8 +181,10 @@ encodeSolved c@Config {..} atoms
       = do
         encodedOp   <- encode sesPosition op
         opLength    <- safeNaturalDowncast $ fromIntegral $ BS.length encodedOp
-        newPosition <- assert (sizeRVA op == opLength) $
-          addOffsets c sesPosition op
+        newPosition <-
+          assert (sizeRVA op == opLength) $
+          assert (sizeIA  op == opLength) $
+            addOffsets c sesPosition op
         pure s
           { sesPosition = newPosition
           , sesEncoded = sesEncoded <> encodedOp
