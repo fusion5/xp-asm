@@ -19,6 +19,15 @@ import qualified Data.Sequence as Seq
 import qualified Data.Binary.Put as Bin
 import qualified Data.ByteString.Lazy as BS
 
+main :: IO ()
+main = hspec $
+  do
+    miscSpec
+    address8Spec
+    address32Spec
+    positionSpec
+    alignAtomSpec
+
 -- | Opcode defined for testing purposes
 data TestOpcode address
   = JumpAbsoluteW32 address
@@ -185,9 +194,9 @@ w32RelativeSpec reference referenceName
       assembleW32 (endReference JumpRelativeW8 reference 0 0)
         `shouldBeBytes` bytes [0x02, 0x02]
 
-main :: IO ()
-main = hspec $
-  do
+miscSpec :: Spec
+miscSpec
+  = do
     it "Empty list assembly returns no bytes" $
       assembleW8 [] `shouldBeBytes` BS.empty
 
@@ -202,7 +211,9 @@ main = hspec $
       encodeW32 0x100
         `shouldBe` Right (BS.pack [0x00, 0x01, 0x00, 0x00])
 
-    describe "Given an 8 bit address space" $ do
+address8Spec :: Spec
+address8Spec
+  = describe "Given an 8 bit address space" $ do
       -- Note: unhappy paths are not tested, because they are covered by
       -- position tests, since Position is mandatory
       let Config {..} = configW8
@@ -210,7 +221,9 @@ main = hspec $
       w8AbsoluteSpec RefRelativeVA "RelativeVA" 0x00
       w8AbsoluteSpec RefVA         "VA"         acVirtualBaseAddress
 
-    -- Test instruction size constraints rather than address space constraints
+address32Spec :: Spec
+address32Spec
+  = -- Test instruction size constraints rather than address space constraints
     describe "Given a 32bit address space" $ do
       -- Note: unhappy paths are not tested, because they are covered by
       -- position tests, since Position is mandatory
@@ -222,38 +235,36 @@ main = hspec $
       w32RelativeSpec RefRelativeVA "RelativeVA"
       w32RelativeSpec RefVA         "VA"
 
-    positionTests
-
-positionTests :: Spec
-positionTests =
+positionSpec :: Spec
+positionSpec =
   describe "Position tests" $ do
     it "Alignment tests" $ do
-      align (mkPos 0) 0 `shouldBe` Left AlignTo0
-      align (mkPos 1) 0 `shouldBe` Left AlignTo0
-      align (mkPos 0) 1 `shouldBe` Right (mkPos 0)
-      align (mkPos 1) 1 `shouldBe` Right (mkPos 0)
-      align (mkPos 0) 2 `shouldBe` Right (mkPos 0)
-      align (mkPos 1) 2 `shouldBe` Right (mkPos 1)
-      align (mkPos 2) 2 `shouldBe` Right (mkPos 0)
+      align 0 zero      `shouldBe` Left AlignTo0
+      align 0 (mkPos 1) `shouldBe` Left AlignTo0
+      align 1 zero      `shouldBe` Right zero
+      align 1 (mkPos 1) `shouldBe` Right zero
+      align 2 zero      `shouldBe` Right zero
+      align 2 (mkPos 1) `shouldBe` Right (mkPos 1)
+      align 2 (mkPos 2) `shouldBe` Right zero
     prop "Align property " $ \n -> do
-      align (mkPos $ n+2) (n+1) `shouldBe` Right (mkPos n)
+      align (n+1) (mkPos $ n+2) `shouldBe` Right (mkPos n)
     it "Conversion from address to position" $ do
       integralToPosition (1  :: Integer) `shouldBe` Right (mkPos 1)
-      integralToPosition (0  :: Integer) `shouldBe` Right (mkPos 0)
+      integralToPosition (0  :: Integer) `shouldBe` Right zero
       integralToPosition (-1 :: Integer) `shouldBe` Left NegativeToNatural
     it "Downcast tests" $ do
-      positionDowncast (mkPos 0)     `shouldBe`      mkRightW8 0
+      positionDowncast zero          `shouldBe`      mkRightW8 0
       positionDowncast (mkPos 0xFF)  `shouldBe`      mkRightW8 0xFF
       positionDowncast (mkPos 0x100) `shouldSatisfy` isLeftW8
-      positionDowncast (mkPos 0)     `shouldBe`      mkRightI8 0
+      positionDowncast zero          `shouldBe`      mkRightI8 0
       positionDowncast (mkPos 0x7F)  `shouldBe`      mkRightI8 0x7F
       positionDowncast (mkPos 0x80)  `shouldSatisfy` isLeftI8
     it "Subtraction tests with under/overflows" $ do
-      sub (mkPos 0) (mkPos 0)    `shouldBe`      mkRightI8 0
-      sub (mkPos 1) (mkPos 0)    `shouldBe`      mkRightI8 1
-      sub (mkPos 0) (mkPos 1)    `shouldBe`      mkRightI8 (-1)
-      sub (mkPos 0) (mkPos 0x80) `shouldBe`      mkRightI8 (-128)
-      sub (mkPos 0) (mkPos 0x81) `shouldSatisfy` isLeftI8
+      sub zero      zero         `shouldBe`      mkRightI8 0
+      sub (mkPos 1) zero         `shouldBe`      mkRightI8 1
+      sub zero      (mkPos 1)    `shouldBe`      mkRightI8 (-1)
+      sub zero      (mkPos 0x80) `shouldBe`      mkRightI8 (-128)
+      sub zero      (mkPos 0x81) `shouldSatisfy` isLeftI8
       sub (mkPos 0x7F) zero      `shouldBe`      mkRightI8 127
       sub (mkPos 0x80) zero      `shouldSatisfy` isLeftI8
   where
@@ -265,6 +276,51 @@ positionTests =
     mkRightI8 = Right
     isLeftI8 :: Either AssemblyError Int8 -> Bool
     isLeftI8 = either (const True) (const False)
+
+alignAtomSpec :: Spec
+alignAtomSpec = do
+  describe "Align image atom tests" $ do
+    it "Align image to zero should result in error" $
+      shouldBeError $ assembleW8 [AAlignIA 0]
+    it "Align image to one should produce no bytes" $
+      assembleW8 [AAlignIA 1] `shouldBeBytes` BS.empty
+    it "Align image should work" $
+      assembleW8 [AOp (Zeroes 1), AAlignIA 10]
+        `shouldBeBytes` BS.replicate 10 0
+  describe "Align memory atom tests" $ do
+    it "Align memory to zero should result in error" $
+      shouldBeError $ assembleW8 [AAlignVA 0]
+    it "Align memory should not emit bytes" $
+      assembleW8 [AOp (Zeroes 1), AAlignVA 10]
+        `shouldBeBytes` BS.singleton 0
+    it "Align memory should work" $ do
+      -- This assumes that the base address is already aligned to 0x10
+      (do
+        baseAddress <- integralToPosition acVirtualBaseAddress
+        align 0x10 baseAddress
+        ) `shouldBe` Right (mkPos 0)
+
+      assembleW8
+        [ AOp (Zeroes 1)
+        , AAlignVA 0x10
+        , ALabel "here"
+        , AOp (JumpAbsoluteW32 (RefVA         "here"))
+        , AOp (JumpAbsoluteW32 (RefRelativeVA "here"))
+        , AOp (JumpAbsoluteW32 (RefIA         "here"))
+        ]
+          `shouldBeBytes` bytes
+            [ 0x00  -- Zeroes 1
+                    -- VA and RVA set to 10
+                    -- "here"
+                    -- absolute VA of "here":
+            , 0x01, acVirtualBaseAddress + 0x10, 0x00, 0x00, 0x00
+                    -- absolute RVA of "here":
+            , 0x01, 0x10, 0x00, 0x00, 0x00
+                    -- absolute IA of "here":
+            , 0x01, 1, 0x00, 0x00, 0x00
+            ]
+  where Config {..} = configW8
+
 
 -- Wraps the bytestring to produce different show output
 shouldBeBytes

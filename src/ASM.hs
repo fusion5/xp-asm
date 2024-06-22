@@ -26,29 +26,20 @@ import qualified Data.Either.Extra as Either
 -- elements in the sequence by means of the 'Reference' type.
 
 addOffsets
-  :: (Encodable op, Address address)
+  :: Address address
   => Config address
   -> PositionInfo
-  -> op a
+  -> Natural
   -> Either AssemblyError PositionInfo
-addOffsets Config {..} a@PositionInfo {..} op
+addOffsets Config {..} a@PositionInfo {..} n
   = do
     basePosition <- integralToPosition acVirtualBaseAddress
-    opSize       <- integralToPosition $ size op
+    opSize       <- integralToPosition n
     pure $ a
       { piIA         = piIA `add` opSize
       , piRelativeVA = piRelativeVA `add` opSize
       , piVA         = piRelativeVA `add` opSize `add` basePosition
       }
-
-_alignIA
-  :: Natural
-  -> PositionInfo
-  -> Either AssemblyError PositionInfo
-_alignIA n a@PositionInfo {..}
-  = do
-    delta <- piIA `align` n
-    pure $ a { piIA = piIA `add` delta }
 
 -- | Extract all labels in the sequence in a Map. The key is the label and the
 -- value is positional information (PositionInfo)
@@ -65,13 +56,24 @@ scanLabels c@Config {..} atoms = do
       (PositionInfo zero zero basePosition) Map.empty
 
     scan s@StateLabelScan {..} (AOp op) = do
-      newPosition <- addOffsets c asPosition op
+      newPosition <- addOffsets c asPosition (size op)
       pure s { asPosition = newPosition }
     scan s@StateLabelScan {..} (ALabel labelText) =
       pure s { aslsLabels = Map.insert labelText asPosition aslsLabels }
-    -- scan s@StateLabelScan {..} (AAlignIA n) = do
-    --   newPosition <- alignIA asPosition
-    --   pure s {  asPosition = newPosition}
+    scan s@StateLabelScan {asPosition = p@PositionInfo {..}} (AAlignIA n) = do
+      newIA  <- fst <$> alignHelper piIA n
+      pure s { asPosition = p { piIA = newIA }}
+    scan s@StateLabelScan {asPosition = p@PositionInfo {..}} (AAlignVA n) = do
+      newVA  <- fst <$> alignHelper piVA n
+      newRVA <- fst <$> alignHelper piRelativeVA n
+      pure s { asPosition = p { piVA = newVA, piRelativeVA = newRVA }}
+
+-- | Obvious
+alignHelper :: Position -> Natural -> Either AssemblyError (Position, Position)
+alignHelper p n
+  = do
+    delta <- align n p
+    pure (p `add` delta, delta)
 
 -- | Solve label references to dictionary addresses.
 solveReferences
@@ -102,7 +104,15 @@ solveAtomReferences _ labelDictionary s@StateReferenceSolve {..} = go
       pure s
         { asrsAtoms = asrsAtoms Seq.|> opSolved
         }
-    go (ALabel _) = pure s -- self-solve labels? no need, discard them...
+    go ALabel{} = pure s -- discard labels
+    go (AAlignIA n) =
+      pure s
+        { asrsAtoms = asrsAtoms Seq.|> AAlignIA n
+        }
+    go (AAlignVA n) =
+      pure s
+        { asrsAtoms = asrsAtoms Seq.|> AAlignVA n
+        }
 
     query labelText = Either.maybeToEither (ReferenceMissing labelText)
                         (Map.lookup labelText labelDictionary)
@@ -139,10 +149,27 @@ encodeSolved c@Config {..} atoms
         encodedOp   <- encode sesPosition op
         newPosition <-
           assert (fromIntegral (BS.length encodedOp) == size op) $
-            addOffsets c sesPosition op
+            addOffsets c sesPosition (size op)
         pure s
           { sesPosition = newPosition
           , sesEncoded  = sesEncoded <> encodedOp
+          }
+    encodeAtom s@StateEncodeSolved {sesPosition = pos@PositionInfo {..}, ..}
+      (AAlignIA n)
+      = do
+        (newIA, delta) <- alignHelper piIA n
+        replicateCount <- positionDowncast delta
+        pure s
+          { sesPosition = pos { piIA = newIA }
+          , sesEncoded  = sesEncoded <> BS.replicate replicateCount 0x00
+          }
+    encodeAtom s@StateEncodeSolved {sesPosition = pos@PositionInfo {..}}
+      (AAlignVA n)
+      = do
+        newVA  <- fst <$> alignHelper piVA n
+        newRVA <- fst <$> alignHelper piRelativeVA n
+        pure s
+          { sesPosition = pos { piVA = newVA, piRelativeVA = newRVA }
           }
 
 assemble

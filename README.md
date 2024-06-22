@@ -10,6 +10,8 @@ cabal repl xp-asm
 Test: 
 feedback -- cabal test xp-asm-test --enable-tests
 
+History: 
+
 2024-05-24
 
 2024-05-25
@@ -112,16 +114,22 @@ Add/test objects that add to RVA but not to IA
 - If sizeRVA and sizeIA are always equal then why do we have two functions?
     (Because they could be used to implement alignment at the opcode level,
     but the library is going to do that.)
-  OK
+    OK
 
 - Should size return a Position?
     No, let's use Natural because it's more widespread.
 
-*** Activity stack
-
 - Add alignment feature, AAlignIA, AAlignVA
-- Rename piIA and piRelativeVA to piImage and piRelativeVirtual etc. Also in 
-  Encodable. Rename Encodable to Assemblable?
+    OK
+
 - Wrap Natural in a new type and call it Position
+    OK
+
 - Refactoring idea, maybe: merge encodable and bytesized into a single class
   with a single type that returns bytes (if the address is resolved) and ia/va sizes (always)
+    OK
+
+*** Activity stack
+
+- Rename piIA and piRelativeVA to piImage and piRelativeVirtual etc. Also in 
+  Encodable. Rename Encodable to Assemblable?
