@@ -104,15 +104,10 @@ instance Encodable TestOpcode where
     = pure $ BS.replicate (fromIntegral n) 0x00
 
   -- | Warning, this should match the Encodable lengths (to be tested)
-  sizeRVA (JumpAbsoluteW32 _) = 1 + 4
-  sizeRVA (JumpRelativeW8 _)  = 1 + 1
-  sizeRVA (Zeroes n)          = n
-  sizeRVA Noop                = 1
-
-  sizeIA (JumpAbsoluteW32 _)  = 1 + 4
-  sizeIA (JumpRelativeW8 _)   = 1 + 1
-  sizeIA (Zeroes n)           = n
-  sizeIA Noop                 = 1
+  size (JumpAbsoluteW32 _) = 1 + 4
+  size (JumpRelativeW8 _)  = 1 + 1
+  size (Zeroes n)          = n
+  size Noop                = 1
 
 configW8 :: Config Word8
 configW8 = Config {..} where acVirtualBaseAddress = 0x80

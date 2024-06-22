@@ -34,12 +34,11 @@ addOffsets
 addOffsets Config {..} a@PositionInfo {..} op
   = do
     basePosition <- integralToPosition acVirtualBaseAddress
-    addImage     <- integralToPosition $ sizeIA  op -- redundant really
-    addMemory    <- integralToPosition $ sizeRVA op -- redundant really
+    opSize       <- integralToPosition $ size op
     pure $ a
-      { piIA         = piIA `add` addImage
-      , piRelativeVA = piRelativeVA `add` addMemory
-      , piVA         = piRelativeVA `add` addMemory `add` basePosition
+      { piIA         = piIA `add` opSize
+      , piRelativeVA = piRelativeVA `add` opSize
+      , piVA         = piRelativeVA `add` opSize `add` basePosition
       }
 
 _alignIA
@@ -138,14 +137,12 @@ encodeSolved c@Config {..} atoms
     encodeAtom s@StateEncodeSolved {..} (AOp op)
       = do
         encodedOp   <- encode sesPosition op
-        let opLength = fromIntegral $ BS.length encodedOp
         newPosition <-
-          assert (opLength == sizeRVA op) $
-            assert (opLength == sizeIA op) $
-              addOffsets c sesPosition op
+          assert (fromIntegral (BS.length encodedOp) == size op) $
+            addOffsets c sesPosition op
         pure s
           { sesPosition = newPosition
-          , sesEncoded = sesEncoded <> encodedOp
+          , sesEncoded  = sesEncoded <> encodedOp
           }
 
 assemble

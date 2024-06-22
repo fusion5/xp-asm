@@ -37,8 +37,7 @@ class Encodable op where
     => PositionInfo           -- needed to compute e.g. relative jump offsets
     -> op (Reference address) -- what to encode, with solved references
     -> Either AssemblyError BS.ByteString
-  sizeIA  :: op a -> Natural -- todo: add PosInfo?
-  sizeRVA :: op a -> Natural
+  size :: op a -> Natural
 
 -- | Memory / program addresses have certain constraints. Note that this
 -- allows for negative numbers, maybe it's not ideal

@@ -109,15 +109,19 @@ Add/test objects that add to RVA but not to IA
 - Refactor tests 
     OK
 
-*** Activity stack
-
 - If sizeRVA and sizeIA are always equal then why do we have two functions?
     (Because they could be used to implement alignment at the opcode level,
     but the library is going to do that.)
+  OK
+
+- Should size return a Position?
+    No, let's use Natural because it's more widespread.
+
+*** Activity stack
+
+- Add alignment feature, AAlignIA, AAlignVA
 - Rename piIA and piRelativeVA to piImage and piRelativeVirtual etc. Also in 
   Encodable. Rename Encodable to Assemblable?
-- Add alignment feature, AAlignIA, AAlignVA
-- Should sizeIA and sizeRVA return Position?
 - Wrap Natural in a new type and call it Position
 - Refactoring idea, maybe: merge encodable and bytesized into a single class
   with a single type that returns bytes (if the address is resolved) and ia/va sizes (always)
