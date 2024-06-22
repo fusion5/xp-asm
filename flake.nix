@@ -1,6 +1,6 @@
 {
   # inspired by: https://serokell.io/blog/practical-nix-flakes#packaging-existing-applications
-  description = "A Hello World in Haskell with a dependency and a devShell";
+  description = "Bytecode generator for assembly purposes";
   inputs.nixpkgs.url = "nixpkgs";
   inputs.feedback.url = github:NorfairKing/feedback;
 
