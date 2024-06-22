@@ -1,10 +1,6 @@
 module ASM
 ( assemble
 , Config (..)
-, safePlus
-, safeMinus
-, safeDowncast
-, safeAlign -- exported for tests
 ) where
 
 import Common
@@ -14,9 +10,7 @@ import ASM.Types
 import qualified Data.Sequence as Seq
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.Map as Map
-import qualified Numeric.Decimal.BoundedArithmetic as B
 import qualified Data.Either.Extra as Either
-import qualified Control.Exception as Exception
 
 -- | An assembler that produces one object, without imported/exported
 -- references. There are three passes (see assemble function):
@@ -31,16 +25,6 @@ import qualified Control.Exception as Exception
 -- module facilitates outputting several types of references to other 'op'
 -- elements in the sequence by means of the 'Reference' type.
 
-boundedBinopMapEx
-  :: (Address a)
-  => (Exception.SomeException -> AssemblyError)
-  -> (a -> a -> Either Exception.SomeException a)
-  -> a
-  -> a
-  -> Either AssemblyError a
-boundedBinopMapEx ex op o1 o2
-  = Either.mapLeft ex $ op o1 o2
-
 addOffsets
   :: (Encodable op, Address address)
   => Config address
@@ -49,11 +33,13 @@ addOffsets
   -> Either AssemblyError PositionInfo
 addOffsets Config {..} a@PositionInfo {..} op
   = do
-    baseAddress <- safeNaturalDowncast $ fromIntegral acVirtualBaseAddress
+    basePosition <- integralToPosition acVirtualBaseAddress
+    addImage     <- integralToPosition $ sizeIA  op -- redundant really
+    addMemory    <- integralToPosition $ sizeRVA op -- redundant really
     pure $ a
-      { piIA         = piIA         + sizeIA op
-      , piRelativeVA = piRelativeVA + sizeRVA op
-      , piVA         = piRelativeVA + sizeRVA op + baseAddress
+      { piIA         = piIA `add` addImage
+      , piRelativeVA = piRelativeVA `add` addMemory
+      , piVA         = piRelativeVA `add` addMemory `add` basePosition
       }
 
 _alignIA
@@ -62,20 +48,8 @@ _alignIA
   -> Either AssemblyError PositionInfo
 _alignIA n a@PositionInfo {..}
   = do
-    toAddNat <- piIA `safeAlign` n
-    pure $ a { piIA = piIA + toAddNat }
-
--- | How many bytes to add to reach a multiple of n
-safeAlign :: Natural -> Natural -> Either AssemblyError Natural
-safeAlign _       0 = Left AlignTo0
-safeAlign address n = Right $
-    assert (n >= exceed) $
-      if exceed == 0
-        then 0
-        else n - exceed
-  where
-    exceed :: Natural
-    exceed = fromIntegral address `mod` n
+    delta <- piIA `align` n
+    pure $ a { piIA = piIA `add` delta }
 
 -- | Extract all labels in the sequence in a Map. The key is the label and the
 -- value is positional information (PositionInfo)
@@ -85,11 +59,11 @@ scanLabels
   -> Seq.Seq (Atom (op (Reference LabelText)))
   -> Either AssemblyError (Map.Map LabelText PositionInfo)
 scanLabels c@Config {..} atoms = do
-  baseAddress <- safeNaturalDowncast $ fromIntegral acVirtualBaseAddress
-  aslsLabels <$> foldM scan (initialState baseAddress) atoms
+  basePosition <- integralToPosition acVirtualBaseAddress
+  aslsLabels <$> foldM scan (initialState basePosition) atoms
   where
-    initialState baseAddress = StateLabelScan
-      (PositionInfo 0 0 baseAddress) Map.empty
+    initialState basePosition = StateLabelScan
+      (PositionInfo zero zero basePosition) Map.empty
 
     scan s@StateLabelScan {..} (AOp op) = do
       newPosition <- addOffsets c asPosition op
@@ -99,22 +73,6 @@ scanLabels c@Config {..} atoms = do
     -- scan s@StateLabelScan {..} (AAlignIA n) = do
     --   newPosition <- alignIA asPosition
     --   pure s {  asPosition = newPosition}
-
-safePlus :: (Address a) => a -> a -> Either AssemblyError a
-safePlus = boundedBinopMapEx (Arithmetic . ExceptionWrap) B.plusBounded
-
-safeMinus :: (Address a) => a -> a -> Either AssemblyError a
-safeMinus = boundedBinopMapEx (Arithmetic . ExceptionWrap) B.minusBounded
-
-safeDowncast :: (Integral a, Bounded a) => Integer -> Either AssemblyError a
-safeDowncast = Either.mapLeft (Arithmetic . ExceptionWrap)
-             . B.fromIntegerBounded
-
--- Integer is used and not 'Integral a' in order to solve "Defaulting to type"
--- warnings
-safeNaturalDowncast :: Integer -> Either AssemblyError Natural
-safeNaturalDowncast n | n < 0 = Left NegativeToNatural
-safeNaturalDowncast n         = Right $ fromIntegral n
 
 -- | Solve label references to dictionary addresses.
 solveReferences
@@ -150,16 +108,16 @@ solveAtomReferences _ labelDictionary s@StateReferenceSolve {..} = go
     query labelText = Either.maybeToEither (ReferenceMissing labelText)
                         (Map.lookup labelText labelDictionary)
 
-    get labelText f = query labelText >>= safeDowncast . fromIntegral . f
+    addressOf labelText f = query labelText >>= positionDowncast . f
 
     solveReference
       :: Reference LabelText -> Either AssemblyError (Reference address)
     solveReference (RefVA labelText) =
-      RefVA         <$> get labelText piVA
+      RefVA         <$> addressOf labelText piVA
     solveReference (RefRelativeVA labelText) =
-      RefRelativeVA <$> get labelText piRelativeVA
+      RefRelativeVA <$> addressOf labelText piRelativeVA
     solveReference (RefIA labelText) =
-      RefIA         <$> get labelText piIA
+      RefIA         <$> addressOf labelText piIA
 
 -- | Encode solved references to ByteString. Keeps track of current positions
 encodeSolved
@@ -170,21 +128,21 @@ encodeSolved
   -> Either AssemblyError BS.ByteString
 encodeSolved c@Config {..} atoms
     = do
-      baseAddress <- safeNaturalDowncast $ fromIntegral acVirtualBaseAddress
-      sesEncoded <$> foldM encodeAtom (initialState baseAddress) atoms
+      basePosition <- integralToPosition acVirtualBaseAddress
+      sesEncoded <$> foldM encodeAtom (initialState basePosition) atoms
   where
-    initialState baseAddress = StateEncodeSolved
-      (PositionInfo 0 0 baseAddress) ""
+    initialState basePosition = StateEncodeSolved
+      (PositionInfo zero zero basePosition) ""
 
     encodeAtom s (ALabel _) = pure s
     encodeAtom s@StateEncodeSolved {..} (AOp op)
       = do
         encodedOp   <- encode sesPosition op
-        opLength    <- safeNaturalDowncast $ fromIntegral $ BS.length encodedOp
+        let opLength = fromIntegral $ BS.length encodedOp
         newPosition <-
-          assert (sizeRVA op == opLength) $
-          assert (sizeIA  op == opLength) $
-            addOffsets c sesPosition op
+          assert (opLength == sizeRVA op) $
+            assert (opLength == sizeIA op) $
+              addOffsets c sesPosition op
         pure s
           { sesPosition = newPosition
           , sesEncoded = sesEncoded <> encodedOp

@@ -5,11 +5,14 @@
 module MainTest where
 
 import Test.Hspec
+import Test.Hspec.QuickCheck
+import Test.QuickCheck.Instances.Natural ()
 
 import Common
 
 import ASM
 import ASM.Types
+import ASM.Types.Position
 import Data.Int
 
 import qualified Data.Sequence as Seq
@@ -39,12 +42,31 @@ encodeAbsoluteW32
   :: Address addr
   => Reference addr
   -> Either AssemblyError BS.ByteString
-encodeAbsoluteW32 (RefIA a)         = safeDowncast (fromIntegral a) >>= encodeW32
-encodeAbsoluteW32 (RefRelativeVA a) = safeDowncast (fromIntegral a) >>= encodeW32
-encodeAbsoluteW32 (RefVA a)         = safeDowncast (fromIntegral a) >>= encodeW32
+encodeAbsoluteW32 = go
+  where
+    go (RefIA a)         = enc a
+    go (RefRelativeVA a) = enc a
+    go (RefVA a)         = enc a
+    enc a = integralToPosition a >>= positionDowncast >>= encodeW32
 
--- Example of encoding a relative reference to an address. Here relative means
--- relative to the image base memory address
+-- | Example of encoding a relative reference to an address:
+--
+-- 0x00 00
+-- 0x01 00 .test
+-- 0x02 00
+-- 0x03 <reference> (1 byte size reference to .test)
+-- 0x04
+-- ...
+--
+-- Decodes to
+--
+-- 0x00 00
+-- 0x01 00
+-- 0x02 00
+-- 0x03 FE (-2 integer encoding)
+-- 0x04
+-- ...
+--
 -- If the offset exceeds 1 byte signed integer then error out with overflow.
 encodeRelativeW8
   :: Address addr
@@ -52,15 +74,14 @@ encodeRelativeW8
   -> Reference addr
   -> Either AssemblyError BS.ByteString
 encodeRelativeW8 PositionInfo {..} solvedReference
-  = downcastEncode $ delta solvedReference
+  = do
+    targetPosition <- integralToPosition target
+    sub targetPosition currentPosition >>= encodeI8W8
   where
-    delta (RefIA targetAddr)
-      = fromIntegral targetAddr - fromIntegral piIA
-    delta (RefRelativeVA targetAddr)
-      = fromIntegral targetAddr - fromIntegral piRelativeVA
-    delta (RefVA targetAddr)
-      = fromIntegral targetAddr - fromIntegral piVA
-    downcastEncode i = safeDowncast i >>= encodeI8W8
+    (target, currentPosition)        = terms solvedReference
+    terms (RefIA         targetAddr) = (targetAddr, piIA)
+    terms (RefRelativeVA targetAddr) = (targetAddr, piRelativeVA)
+    terms (RefVA         targetAddr) = (targetAddr, piVA)
 
 encodeW32 :: Word32 -> Either AssemblyError BS.ByteString
 encodeW32 = pure . Bin.runPut . Bin.putWord32le . fromIntegral
@@ -136,56 +157,38 @@ endReference opcode reference zeroesBeforeReference zeroesBeforeLabel
    , ALabel "end"
    ]
 
-w8TopLabelAbsoluteSpec
+w8AbsoluteSpec
   :: HasCallStack
   => (LabelText -> Reference LabelText) -> String -> Word8 -> Spec
-w8TopLabelAbsoluteSpec reference referenceName expectedByte
-  = describe [qq|When assembling a reference of type $referenceName at the top|] $
-      it [qq|Then byte $expectedByte is obtained|] $
-        assembleW8 (topReference JumpAbsoluteW32 reference 1)
-            `shouldBeBytes` bytes (0x00:0x01:expectedByte:0x00:0x00:0x00:[])
-
-w8MidLabelAbsoluteSpec
-  :: HasCallStack
-  => (LabelText -> Reference LabelText) -> String -> Word8 -> Spec
-w8MidLabelAbsoluteSpec reference referenceName expectedByte
-  = describe [qq|When assembling a reference of type $referenceName in the middle|] $
-      it [qq|Then byte $expectedByte is obtained|] $
-        assembleW8
-          (midReference JumpAbsoluteW32 reference 1 1)
-            `shouldBeBytes` bytes (0x00:0x00:0x01:expectedByte:0x00:0x00:0x00:[])
-
-w8EndLabelAbsoluteSpec
-  :: HasCallStack
-  => (LabelText -> Reference LabelText) -> String -> Word8 -> Spec
-w8EndLabelAbsoluteSpec reference referenceName expectedByte
-  = describe [qq|When assembling a reference of type $referenceName in the end|] $
-      it [qq|Then byte $expectedByte is obtained|] $
-        assembleW8
-          (endReference JumpAbsoluteW32 reference 1 1)
-            `shouldBeBytes` bytes (0x00:0x01:expectedByte:0x00:0x00:0x00:0x00:[])
-
--- | Note: numZeroes should be the boundary value that causes overflow. Here
--- the overflow doesn't happen because of the encoding of the instruction but
--- because of the assembler.
-w8OverflowAbsoluteSpec
-  :: HasCallStack
-  => (LabelText -> Reference LabelText) -> String -> Natural -> Spec
-w8OverflowAbsoluteSpec reference referenceName numZeroes
+w8AbsoluteSpec reference referenceName baseImageOffset
   = do
-    describe [qq|When referencing $referenceName after {numZeroes - 1} zeroes|] $
-      it [qq|Then the assembly succeeds|] $
-        assembleW8
-          (midReference JumpAbsoluteW32 reference (numZeroes - 1) 0)
-            `shouldBeBytes` zeroesAndBytes (fromIntegral $ numZeroes - 1)
-              [0x01, 0xFF, 0x00, 0x00, 0x00]
-    describe [qq|When referencing a $referenceName after $numZeroes zeroes|] $
-      it [qq|Then the address space overflows|] $
-        shouldBeError $ assembleW8 $
-          -- W32 instruction chosen to avoid hitting any instruction
-          -- overflow path
-          midReference JumpAbsoluteW32 reference numZeroes 0
+    it [qq|Absolute reference of type $referenceName to the top|] $
+      assembleW8 (topReference JumpAbsoluteW32 reference 1)
+        `shouldBeBytes`
+          bytes (0x00:0x01:baseImageOffset:0x00:0x00:0x00:[])
+    it [qq|Absolute reference of type $referenceName to the middle|] $
+      assembleW8 (midReference JumpAbsoluteW32 reference 1 1)
+        `shouldBeBytes`
+          bytes (0x00:0x00:0x01:(baseImageOffset + 1):0x00:0x00:0x00:[])
+    it [qq|Absolute reference of type $referenceName to the end|] $
+      assembleW8 (endReference JumpAbsoluteW32 reference 1 1)
+        `shouldBeBytes`
+          bytes (0x00:0x01:(baseImageOffset + 7):0x00:0x00:0x00:0x00:[])
 
+w32RelativeSpec
+  :: HasCallStack
+  => (LabelText -> Reference LabelText) -> String -> Spec
+w32RelativeSpec reference referenceName
+  = do
+    it [qq|Relative -1 backwards reference of type $referenceName|] $
+      assembleW32 (topReference JumpRelativeW8 reference 1)
+        `shouldBeBytes` bytes [0x00, 0x02, 0xFF]
+    it [qq|Relative 0-offset reference of type $referenceName|] $
+      assembleW32 (topReference JumpRelativeW8 reference 0)
+        `shouldBeBytes` bytes [0x02, 0x00]
+    it [qq|Relative 2 forwards reference of type $referenceName|] $
+      assembleW32 (endReference JumpRelativeW8 reference 0 0)
+        `shouldBeBytes` bytes [0x02, 0x02]
 
 main :: IO ()
 main = hspec $
@@ -204,106 +207,71 @@ main = hspec $
       encodeW32 0x100
         `shouldBe` Right (BS.pack [0x00, 0x01, 0x00, 0x00])
 
-    describe "Given a 1 byte address space" $ do
-      -- Test of happy-path, basic functionality of absolute references
-      w8TopLabelAbsoluteSpec RefVA         "VA"         0x80 -- base image offset
-      w8TopLabelAbsoluteSpec RefRelativeVA "RelativeVA" 0x00
-      w8TopLabelAbsoluteSpec RefIA         "IA"         0x00
-      w8MidLabelAbsoluteSpec RefVA         "VA"         0x81 -- base image offset + 1
-      w8MidLabelAbsoluteSpec RefRelativeVA "RelativeVA" 0x01
-      w8MidLabelAbsoluteSpec RefIA         "IA"         0x01
-      w8EndLabelAbsoluteSpec RefVA         "VA"         0x87 -- base image offset + 7
-      w8EndLabelAbsoluteSpec RefRelativeVA "RelativeVA" 0x07
-      w8EndLabelAbsoluteSpec RefIA         "IA"         0x07
+    describe "Given an 8 bit address space" $ do
+      -- Note: unhappy paths are not tested, because they are covered by
+      -- position tests, since Position is mandatory
+      let Config {..} = configW8
+      w8AbsoluteSpec RefIA         "IA"         0x00
+      w8AbsoluteSpec RefRelativeVA "RelativeVA" 0x00
+      w8AbsoluteSpec RefVA         "VA"         acVirtualBaseAddress
 
-      -- Overflows of the address space caused solely by reference resolution
-      w8OverflowAbsoluteSpec RefVA         "VA"         0x80
-      w8OverflowAbsoluteSpec RefRelativeVA "RelativeVA" 0x100
-      w8OverflowAbsoluteSpec RefIA         "IA"         0x100
-
+    -- Test instruction size constraints rather than address space constraints
+    describe "Given a 32bit address space" $ do
+      -- Note: unhappy paths are not tested, because they are covered by
+      -- position tests, since Position is mandatory
       -- Relative references are more complicated than absolute ones because
       -- they involve subtraction which can both underflow and overflow.
       -- In this case the test covers rather the encoding than the assembler
       -- itself...
-      it "Relative backwards image reference -1" $
-        assembleW8
-          [ ALabel "top"
-          , AOp (Zeroes 1)
-          , AOp (JumpRelativeW8 (RefIA "top"))
-          ]
-          `shouldBeBytes` bytes [0x00, 0x02, 0xFF]
+      w32RelativeSpec RefIA         "IA"
+      w32RelativeSpec RefRelativeVA "RelativeVA"
+      w32RelativeSpec RefVA         "VA"
 
-      it "Relative image reference offset 0" $
-        assembleW8
-          [ ALabel "top"
-          , AOp (JumpRelativeW8 (RefIA "top"))
-          ]
-          `shouldBeBytes` bytes [0x02, 0x00]
+    positionTests
 
-      it "Relative image reference offset 2" $
-        assembleW8
-          [ AOp (JumpRelativeW8 (RefIA "end"))
-          , ALabel "end"
-          ]
-          `shouldBeBytes` bytes [0x02, 0x02]
+positionTests :: Spec
+positionTests =
+  describe "Position tests" $ do
+    it "Alignment tests" $ do
+      align (mkPos 0) 0 `shouldBe` Left AlignTo0
+      align (mkPos 1) 0 `shouldBe` Left AlignTo0
+      align (mkPos 0) 1 `shouldBe` Right (mkPos 0)
+      align (mkPos 1) 1 `shouldBe` Right (mkPos 0)
+      align (mkPos 0) 2 `shouldBe` Right (mkPos 0)
+      align (mkPos 1) 2 `shouldBe` Right (mkPos 1)
+      align (mkPos 2) 2 `shouldBe` Right (mkPos 0)
+    prop "Align property " $ \n -> do
+      align (mkPos $ n+2) (n+1) `shouldBe` Right (mkPos n)
+    it "Conversion from address to position" $ do
+      integralToPosition (1  :: Integer) `shouldBe` Right (mkPos 1)
+      integralToPosition (0  :: Integer) `shouldBe` Right (mkPos 0)
+      integralToPosition (-1 :: Integer) `shouldBe` Left NegativeToNatural
+    it "Downcast tests" $ do
+      positionDowncast (mkPos 0)     `shouldBe`      mkRightW8 0
+      positionDowncast (mkPos 0xFF)  `shouldBe`      mkRightW8 0xFF
+      positionDowncast (mkPos 0x100) `shouldSatisfy` isLeftW8
+      positionDowncast (mkPos 0)     `shouldBe`      mkRightI8 0
+      positionDowncast (mkPos 0x7F)  `shouldBe`      mkRightI8 0x7F
+      positionDowncast (mkPos 0x80)  `shouldSatisfy` isLeftI8
+    it "Subtraction tests with under/overflows" $ do
+      sub (mkPos 0) (mkPos 0)    `shouldBe`      mkRightI8 0
+      sub (mkPos 1) (mkPos 0)    `shouldBe`      mkRightI8 1
+      sub (mkPos 0) (mkPos 1)    `shouldBe`      mkRightI8 (-1)
+      sub (mkPos 0) (mkPos 0x80) `shouldBe`      mkRightI8 (-128)
+      sub (mkPos 0) (mkPos 0x81) `shouldSatisfy` isLeftI8
+      sub (mkPos 0x7F) zero      `shouldBe`      mkRightI8 127
+      sub (mkPos 0x80) zero      `shouldSatisfy` isLeftI8
+  where
+    mkRightW8 :: Word8 -> Either AssemblyError Word8
+    mkRightW8 = Right
+    isLeftW8 :: Either AssemblyError Word8 -> Bool
+    isLeftW8 = either (const True) (const False)
+    mkRightI8 :: Int8 -> Either AssemblyError Int8
+    mkRightI8 = Right
+    isLeftI8 :: Either AssemblyError Int8 -> Bool
+    isLeftI8 = either (const True) (const False)
 
-    -- In general here we try to test instruction size constraints
-    -- rather than with address space constraints
-    describe "Given a 32bit address space" $ do
-      it "Relative image reference maximum (0x7F)" $
-        assembleW32
-          [ AOp (JumpRelativeW8 (RefIA "bottom"))
-          , AOp (Zeroes 125)
-          , ALabel "bottom"
-          ]
-          `shouldBeBytes` bytesAndZeroes [0x02, 0x7F] 125
-
-      it "Relative image reference overflow (0x80)" $
-        -- Overflow not because of the address (Word32) but because of
-        -- instruction bounds (int8)
-        shouldBeError $
-          assembleW32
-            [ AOp (JumpRelativeW8 (RefIA "bottom"))
-            , AOp (Zeroes 0x80)
-            , ALabel "bottom"
-            ]
-
-      it "Relative backwards image reference minimum (-128)" $
-        assembleW32
-          [ ALabel "top"
-          , AOp (Zeroes 128)
-          , AOp (JumpRelativeW8 (RefIA "top"))
-          ]
-          `shouldBeBytes` zeroesAndBytes 128 [0x02, 0x80]
-
-      it "Relative backwards image reference underflow (-129) due to instruction" $
-        shouldBeError $
-          assembleW32
-            [ ALabel "top"
-            , AOp (Zeroes 129)
-            , AOp (JumpRelativeW8 (RefIA "top"))
-            ]
-
-    it "Aligment tests" $ do
-      safeAlignW8 0 0        `shouldBe` Left AlignTo0
-      safeAlignW8 1 0        `shouldBe` Left AlignTo0
-      safeAlignW8 maxBound 0 `shouldBe` Left AlignTo0
-      safeAlignW8 0 1        `shouldBe` Right 0
-      safeAlignW8 maxBound 1 `shouldBe` Right 0
-      safeAlignW8 1 2        `shouldBe` Right 1
-      safeAlignW8 2 2        `shouldBe` Right 0
-      safeAlignW8 3 2        `shouldBe` Right 1
-      safeAlignW8 maxBound (maxWord8 - 1) `shouldBe` Right (maxWord8 - 2)
-      safeAlignW8 maxBound (maxWord8 + 1) `shouldBe` Right 1
-      safeAlignW8 maxBound (2 * maxWord8) `shouldBe` Right maxWord8
-
-maxWord8 :: Natural
-maxWord8 = fromIntegral (maxBound :: Word8)
-
-safeAlignW8 :: Word8 -> Natural -> Either AssemblyError Natural
-safeAlignW8 w8 n = fromIntegral w8 `safeAlign` n
-
-  -- Wraps the bytestring to produce different show output
+-- Wraps the bytestring to produce different show output
 shouldBeBytes
   :: HasCallStack => Either AssemblyError BS.ByteString -> BS.ByteString -> IO ()
 shouldBeBytes (Right got) expected

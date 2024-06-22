@@ -1,40 +1,31 @@
 {-# LANGUAGE DeriveGeneric #-}
 
-module ASM.Types where
+module ASM.Types
+  ( Address
+  , Atom (..)
+  , Config (..)
+  , Encodable (..)
+  , SomeExceptionWrap (..)
+  , LabelText
+  , PositionInfo (..)
+  , Reference (..)
+  , StateEncodeSolved (..)
+  , StateLabelScan (..)
+  , StateReferenceSolve (..)
+  , module ASM.Types.Position
+  , module ASM.Types.AssemblyError
+  ) where
 
 import Common
 
-import qualified Control.Exception as Exception
+import ASM.Types.Position hiding (mkPos)
+import ASM.Types.AssemblyError
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Text as Text
 
-data AssemblyError
-  = Arithmetic SomeExceptionWrap
-  | ReferenceMissing LabelText
-  | -- | In a calculated label difference value that gives the number of bytes
-    -- between the "From" label and the "To" label, the result must be
-    -- positive, therefore the "From" label must be defined before the "To"
-    -- label.
-    FromLabelAfterTo
-  | ReferenceTypeNotSupportedInOpcode Text.Text
-  | OpcodeToByteString AssemblyError
-  | InternalError Text.Text
-  | AlignTo0
-  | NegativeToNatural
-  deriving (Show, Eq)
 
-instance Exception.Exception AssemblyError
-
-newtype SomeExceptionWrap
-  = ExceptionWrap Exception.SomeException deriving (Show)
-
--- | Defining a manual instance because SomeException doesn't make it possible
--- to derive Eq. This is a solution to the problem of checking for Exceptions
--- in unit tests.
-instance Eq SomeExceptionWrap where
-  (ExceptionWrap se1) == (ExceptionWrap se2) = show se1 == show se2
 
 type LabelText = Text.Text
 
@@ -43,25 +34,26 @@ type LabelText = Text.Text
 class Encodable op where
   encode
     :: Address address
-    => PositionInfo           -- needed to compute offsets
+    => PositionInfo           -- needed to compute e.g. relative jump offsets
     -> op (Reference address) -- what to encode, with solved references
     -> Either AssemblyError BS.ByteString
   sizeIA  :: op a -> Natural -- todo: add PosInfo?
   sizeRVA :: op a -> Natural
 
--- | Memory / program addresses have certain constraints
+-- | Memory / program addresses have certain constraints. Note that this
+-- allows for negative numbers, maybe it's not ideal
 class (Integral a, Ord a, Bounded a) => Address a where
 
 data PositionInfo
   = PositionInfo
   { -- | Image Address e.g. of a label (in-file address, offset from the
     -- beginning of the file)
-    piIA  :: Natural
+    piIA         :: Position
   , -- | Relative Virtual Address e.g. of a label (in-memory address minus
     -- image base address)
-    piRelativeVA :: Natural
+    piRelativeVA :: Position
   , -- | Virtual address e.g. of a label
-    piVA :: Natural
+    piVA         :: Position
   }
 
 -- The type of references and solved references defined here must cover the

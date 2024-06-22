@@ -98,13 +98,26 @@ Add/test objects that add to RVA but not to IA
 - Remove IAOffset and VAOffset opcodes. Replace with Zeroes opcode
     OK
 
+2024-06-22
+
+- Redesign position and address types and define safe operations for them
+    OK
+
+- Don't test all possible unhappy paths, only test the base functions
+    OK
+
+- Refactor tests 
+    OK
+
 *** Activity stack
 
-- Abstract relative jump tests
-- Refactor tests 
+- If sizeRVA and sizeIA are always equal then why do we have two functions?
+    (Because they could be used to implement alignment at the opcode level,
+    but the library is going to do that.)
+- Rename piIA and piRelativeVA to piImage and piRelativeVirtual etc. Also in 
+  Encodable. Rename Encodable to Assemblable?
 - Add alignment feature, AAlignIA, AAlignVA
-- sizeIA and sizeRVA should return a Natural
-  if they would take the current position, they could be used to implement alignment
-  (so no need for AlignIA/AlignRVA atoms).
+- Should sizeIA and sizeRVA return Position?
+- Wrap Natural in a new type and call it Position
 - Refactoring idea, maybe: merge encodable and bytesized into a single class
   with a single type that returns bytes (if the address is resolved) and ia/va sizes (always)
