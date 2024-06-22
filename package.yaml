@@ -1,3 +1,7 @@
+name: xp-asm
+version: 0.0.1
+github: fusion5/xp-asm
+
 default-extensions: 
   - StrictData
   - RecordWildCards
