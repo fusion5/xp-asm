@@ -135,8 +135,12 @@ Add/test objects that add to RVA but not to IA
 - Eliminate ALabel and let any AOp emit the label(s).
     OK
 
+- Define types that would be needed for linkable/executable object formats
+    OK
+
 *** Activity stack
 
+- Write a test for TestLinkableObject
 - assemble should work on any Functor?
 - Opcodes need labels as well. Within an opcode there should be references to
   labels that were defined within that opcode. This is needed to support ELF 

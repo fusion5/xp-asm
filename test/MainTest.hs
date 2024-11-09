@@ -14,11 +14,16 @@ import ASM
 import ASM.Types
 import ASM.Types.Position
 import Data.Int
+import Test.Utils
 
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Binary.Put as Bin
 import qualified Data.ByteString.Lazy as BS
+
+-- | Some tests use a Word8 address space, others a Word32 address space.
+instance Address Word8
+instance Address Word32
 
 main :: IO ()
 main = hspec $
@@ -28,8 +33,41 @@ main = hspec $
     address32Spec
     positionSpec
     alignAtomSpec
+    multiLabelSpec
 
--- | Opcode defined for testing purposes
+-- | Things possibly used in a linkable object such as ELF for testing purposes.
+-- Supports recursion.
+data TestLinkableObject address
+  = Section
+    { beginLabel     :: LabelText
+    , numberOfZeroes :: Natural
+    , subsection     :: TestLinkableObject address
+    , endLabel       :: LabelText
+    }
+  | SectionReferences
+    { beginAddress :: address
+    , endAddress   :: address
+    }
+
+instance Encodable TestLinkableObject where
+  encode pI Section{..} = do
+    subBS <- encode pI subsection
+    pure $ BS.replicate (fromIntegral numberOfZeroes) 0x00 <> subBS
+  encode _ SectionReferences{..} = do
+    begin <- encodeAbsoluteW32 beginAddress
+    end   <- encodeAbsoluteW32 endAddress
+    pure $ begin <> end
+
+  labels s0 Section{..} = do
+    s1 <- updateLabels (insertLabel beginLabel (asPosition s0)) s0
+    s2 <- labels s1 subsection
+    updateLabels (insertLabel endLabel (asPosition s2)) s2
+  labels s SectionReferences{} = pure s
+
+  size Section{..} = numberOfZeroes + size subsection
+  size SectionReferences{} = 8
+
+-- | Opcode (e.g. x86-64) defined for testing purposes
 data TestOpcode address
   = JumpAbsoluteW32 address
   | JumpRelativeW8 address
@@ -37,16 +75,6 @@ data TestOpcode address
   | Zeroes Natural
   | Label LabelText
   deriving (Show, Eq, Functor, Foldable, Traversable, Generic)
-
-newtype BSByteShow = BSByteShow BS.ByteString deriving (Eq)
-
-instance Show BSByteShow where
-  show (BSByteShow bs) = show (BS.unpack bs)
-
--- | Some tests use a Word8 address space, others a Word32 address space.
-instance Address Word8
-
-instance Address Word32
 
 -- Example of encoding of an address
 encodeAbsoluteW32
@@ -330,6 +358,10 @@ alignAtomSpec = do
             ]
   where Config {..} = configW8
 
+multiLabelSpec :: Spec
+multiLabelSpec =
+  describe "Objects with multiple labels" $
+    it "Can encode mutliple labels" pending
 
 -- Wraps the bytestring to produce different show output
 shouldBeBytes

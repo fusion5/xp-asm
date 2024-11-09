@@ -26,6 +26,7 @@ data AssemblyError
   | InternalError Text.Text
   | AlignTo0
   | NegativeToNatural
+  | ReferenceExists Text.Text
   deriving (Show, Eq)
 
 instance Exception.Exception AssemblyError

@@ -48,7 +48,7 @@ scanLabels
   => Config address
   -> Seq.Seq (Atom (op (Reference LabelText)))
   -> Either AssemblyError (Map.Map LabelText PositionInfo)
-scanLabels c@Config {..} atoms = do
+scanLabels c@Config{..} atoms = do
   basePosition <- integralToPosition acVirtualBaseAddress
   aslsLabels <$> foldM scan (initialState basePosition) atoms
   where

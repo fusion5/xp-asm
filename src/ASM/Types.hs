@@ -14,6 +14,9 @@ module ASM.Types
   , StateReferenceSolve (..)
   , module ASM.Types.Position
   , module ASM.Types.AssemblyError
+  , insertLabel
+  , updateLabels
+  , updatePosition
   ) where
 
 import Common
@@ -41,6 +44,8 @@ class Encodable op where
     => PositionInfo           -- needed to compute e.g. relative jump offsets
     -> op (Reference address) -- what to encode, with solved references
     -> Either AssemblyError BS.ByteString
+  -- TODO: Why can't we can get rid of this and use the size of encode, which
+  -- would be lazy and wouldn't actually require computing the encoding?
   size :: op a -> Natural
 
 -- | Memory / program addresses have certain constraints. Note that this
@@ -109,6 +114,30 @@ data StateLabelScan address
       -- | Encountered labels so far
     , aslsLabels :: Map.Map LabelText PositionInfo
     }
+
+insertLabel
+  :: LabelText
+  -> PositionInfo
+  -> Map.Map LabelText PositionInfo
+  -> Either AssemblyError (Map.Map LabelText PositionInfo)
+insertLabel label positionInfo m
+  = case Map.lookup label m of
+      Just _existingPosition -> Left $ ReferenceExists label
+      Nothing -> pure $ Map.insert label positionInfo m
+
+updateLabels
+  :: (Map.Map LabelText PositionInfo
+      -> Either AssemblyError (Map.Map LabelText PositionInfo))
+  -> StateLabelScan address
+  -> Either AssemblyError (StateLabelScan address)
+updateLabels f s = do
+  s' <- f (aslsLabels s)
+  pure $ s { aslsLabels = s' }
+
+updatePosition
+  :: (PositionInfo -> PositionInfo)
+  -> StateLabelScan address -> StateLabelScan address
+updatePosition f s = s { asPosition = f (asPosition s) }
 
 -- | The reference solver uses the Map of labels and their address information
 -- to solve references to labels. this is its state
