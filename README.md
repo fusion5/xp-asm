@@ -129,7 +129,27 @@ Add/test objects that add to RVA but not to IA
   with a single type that returns bytes (if the address is resolved) and ia/va sizes (always)
     OK
 
+
+2024-11-09
+
+- Eliminate ALabel and let any AOp emit the label(s).
+    OK
+
 *** Activity stack
 
+- assemble should work on any Functor?
+- Opcodes need labels as well. Within an opcode there should be references to
+  labels that were defined within that opcode. This is needed to support ELF 
+  fields. The assembler currently takes a sequence of opcodes, but it should 
+  be able to assemble a tree. From a tree node there could be a reference to 
+  any other node of the final tree. How do we name nodes? Maybe with 
+  "node.subnode.subsubnode.count" syntax or maybe
+  "node.subnode.subsubnode.startAddr"
+  "node.subnode.subsubnode.endAddr"
+  Or to avoid overusing names, when we solve references, we can solve them by 
+  means of a function that also takes the tree of unsolved references and 
+  extracts the needed information from that tree.
+  Given that the tree shape could be given by data types, there could be 
+  a type class to support the construction of labels.
 - Rename piIA and piRelativeVA to piImage and piRelativeVirtual etc. Also in 
   Encodable. Rename Encodable to Assemblable?

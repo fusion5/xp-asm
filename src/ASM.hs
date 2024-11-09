@@ -57,9 +57,8 @@ scanLabels c@Config {..} atoms = do
 
     scan s@StateLabelScan {..} (AOp op) = do
       newPosition <- addOffsets c asPosition (size op)
-      pure s { asPosition = newPosition }
-    scan s@StateLabelScan {..} (ALabel labelText) =
-      pure s { aslsLabels = Map.insert labelText asPosition aslsLabels }
+      newState <- labels s op
+      pure newState { asPosition = newPosition }
     scan s@StateLabelScan {asPosition = p@PositionInfo {..}} (AAlignIA n) = do
       newIA  <- fst <$> alignHelper piIA n
       pure s { asPosition = p { piIA = newIA }}
@@ -104,7 +103,6 @@ solveAtomReferences _ labelDictionary s@StateReferenceSolve {..} = go
       pure s
         { asrsAtoms = asrsAtoms Seq.|> opSolved
         }
-    go ALabel{} = pure s -- discard labels
     go (AAlignIA n) =
       pure s
         { asrsAtoms = asrsAtoms Seq.|> AAlignIA n
@@ -143,7 +141,6 @@ encodeSolved c@Config {..} atoms
     initialState basePosition = StateEncodeSolved
       (PositionInfo zero zero basePosition) ""
 
-    encodeAtom s (ALabel _) = pure s
     encodeAtom s@StateEncodeSolved {..} (AOp op)
       = do
         encodedOp   <- encode sesPosition op

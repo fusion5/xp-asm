@@ -15,6 +15,7 @@ import ASM.Types
 import ASM.Types.Position
 import Data.Int
 
+import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Binary.Put as Bin
 import qualified Data.ByteString.Lazy as BS
@@ -34,6 +35,7 @@ data TestOpcode address
   | JumpRelativeW8 address
   | Noop
   | Zeroes Natural
+  | Label LabelText
   deriving (Show, Eq, Functor, Foldable, Traversable, Generic)
 
 newtype BSByteShow = BSByteShow BS.ByteString deriving (Eq)
@@ -111,12 +113,19 @@ instance Encodable TestOpcode where
     = pure $ BS.singleton 0x03
   encode _ (Zeroes n)
     = pure $ BS.replicate (fromIntegral n) 0x00
+  encode _ (Label _)
+    = pure BS.empty
+
+  labels s@StateLabelScan{..} (Label labelText)
+    = pure s { aslsLabels = Map.insert labelText asPosition aslsLabels }
+  labels s _ = pure s
 
   -- | Warning, this should match the Encodable lengths (to be tested)
   size (JumpAbsoluteW32 _) = 1 + 4
   size (JumpRelativeW8 _)  = 1 + 1
   size (Zeroes n)          = n
   size Noop                = 1
+  size (Label _)           = 0
 
 configW8 :: Config Word8
 configW8 = Config {..} where acVirtualBaseAddress = 0x80
@@ -130,7 +139,7 @@ topReference
   -> Natural
   -> [Atom (TestOpcode (Reference LabelText))]
 topReference opcode reference zeroesAfterTop
-  = [ ALabel "top"
+  = [ AOp (Label "top")
     , AOp (Zeroes zeroesAfterTop)
     , AOp (opcode (reference "top"))
     ]
@@ -143,7 +152,7 @@ midReference
   -> [Atom (TestOpcode (Reference LabelText))]
 midReference opcode reference zeroesBeforeLabel zeroesAfterLabel
  = [ AOp (Zeroes zeroesBeforeLabel)
-   , ALabel "mid"
+   , AOp (Label "mid")
    , AOp (Zeroes zeroesAfterLabel)
    , AOp (opcode (reference "mid"))
    ]
@@ -158,7 +167,7 @@ endReference opcode reference zeroesBeforeReference zeroesBeforeLabel
  = [ AOp (Zeroes zeroesBeforeReference)
    , AOp (opcode (reference "end"))
    , AOp (Zeroes zeroesBeforeLabel)
-   , ALabel "end"
+   , AOp (Label "end")
    ]
 
 w8AbsoluteSpec
@@ -201,7 +210,7 @@ miscSpec
       assembleW8 [] `shouldBeBytes` BS.empty
 
     it "Label should not generate any bytes" $
-      assembleW8 [ALabel "l"] `shouldBeBytes` BS.empty
+      assembleW8 [AOp (Label "l")] `shouldBeBytes` BS.empty
 
     it "Undefined reference returns an error" $
       shouldBeError $
@@ -303,7 +312,7 @@ alignAtomSpec = do
       assembleW8
         [ AOp (Zeroes 1)
         , AAlignVA 0x10
-        , ALabel "here"
+        , AOp (Label "here")
         , AOp (JumpAbsoluteW32 (RefVA         "here"))
         , AOp (JumpAbsoluteW32 (RefRelativeVA "here"))
         , AOp (JumpAbsoluteW32 (RefIA         "here"))

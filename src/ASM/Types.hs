@@ -26,14 +26,18 @@ import qualified Data.Sequence as Seq
 import qualified Data.Text as Text
 
 
-
+-- | A Label helps to refer by name to the program point where the label is
 type LabelText = Text.Text
 
 -- | Define the encoding of opcodes outside of the library.
 -- | Why not use the Binary class? It doesn't easily allow nice error handling.
 class Encodable op where
+  labels
+    :: StateLabelScan address
+    -> op (Reference address) -- what to scan, without solved references
+    -> Either AssemblyError (StateLabelScan address)
   encode
-    :: Address address
+    :: Address address        -- concrete address, i.e. solved
     => PositionInfo           -- needed to compute e.g. relative jump offsets
     -> op (Reference address) -- what to encode, with solved references
     -> Either AssemblyError BS.ByteString
@@ -74,10 +78,7 @@ data Atom op
     -- jmp, mov, etc. which can be polymorphic in the representation of
     -- address references
     AOp op
-  | -- | A Label helps to refer to the program point where it is included
-    -- by name
-    ALabel LabelText
-  | -- | Emit as many zeroes as needed to reach a multiple given as parameter.
+  |  -- | Emit as many zeroes as needed to reach a multiple given as parameter.
     -- Note that it doesn't alter the virtual addresses; for that, use AlignVA
     AAlignIA Natural
   -- | Aligns both VA and RVA (memory) to a specified alignment. Does not emit
