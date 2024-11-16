@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TypeApplications #-}
 
 module MainTest where
 
@@ -16,14 +17,10 @@ import ASM.Types.Position
 import Data.Int
 import Test.Utils
 
-import qualified Data.Map as Map
+-- import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Binary.Put as Bin
 import qualified Data.ByteString.Lazy as BS
-
--- | Some tests use a Word8 address space, others a Word32 address space.
-instance Address Word8
-instance Address Word32
 
 main :: IO ()
 main = hspec $
@@ -37,19 +34,22 @@ main = hspec $
 
 -- | Things possibly used in a linkable object such as ELF for testing purposes.
 -- Supports recursion.
-data TestLinkableObject address
+data TestLinkableObject
   = Section
     { beginLabel     :: LabelText
     , numberOfZeroes :: Natural
-    , subsection     :: TestLinkableObject address
+    , subsection     :: TestLinkableObject
     , endLabel       :: LabelText
     }
   | SectionReferences
-    { beginAddress :: address
-    , endAddress   :: address
+    { tloBeginReference :: LabelText
+    , tloEndReference   :: LabelText
     }
+  deriving (Show, Eq)
 
 instance Encodable TestLinkableObject where
+  atomize = undefined
+  {-
   encode pI Section{..} = do
     subBS <- encode pI subsection
     pure $ BS.replicate (fromIntegral numberOfZeroes) 0x00 <> subBS
@@ -60,33 +60,25 @@ instance Encodable TestLinkableObject where
 
   labels s0 Section{..} = do
     s1 <- updateLabels (insertLabel beginLabel (asPosition s0)) s0
-    s2 <- labels s1 subsection
+    -- add the size of numberOfZeroes to the position
+    s2 <- labels (updatePosition (addOffsets ) s1) subsection
+    -- add the size of subsection to the position
     updateLabels (insertLabel endLabel (asPosition s2)) s2
   labels s SectionReferences{} = pure s
 
   size Section{..} = numberOfZeroes + size subsection
   size SectionReferences{} = 8
-
--- | Opcode (e.g. x86-64) defined for testing purposes
-data TestOpcode address
-  = JumpAbsoluteW32 address
-  | JumpRelativeW8 address
-  | Noop
-  | Zeroes Natural
-  | Label LabelText
-  deriving (Show, Eq, Functor, Foldable, Traversable, Generic)
+  -}
 
 -- Example of encoding of an address
-encodeAbsoluteW32
-  :: Address addr
-  => Reference addr
-  -> Either AssemblyError BS.ByteString
-encodeAbsoluteW32 = go
-  where
-    go (RefIA a)         = enc a
-    go (RefRelativeVA a) = enc a
-    go (RefVA a)         = enc a
-    enc a = integralToPosition a >>= positionDowncast >>= encodeW32
+-- encodeAbsoluteW32
+--   :: Reference -> Either AssemblyError BS.ByteString
+-- encodeAbsoluteW32 = go
+--   where
+--     go (RefIA a)         = enc a
+--     go (RefRelativeVA a) = enc a
+--     go (RefVA a)         = enc a
+--     enc a = integralToPosition a >>= positionDowncast >>= encodeW32
 
 -- | Example of encoding a relative reference to an address:
 --
@@ -107,20 +99,17 @@ encodeAbsoluteW32 = go
 -- ...
 --
 -- If the offset exceeds 1 byte signed integer then error out with overflow.
-encodeRelativeW8
-  :: Address addr
-  => PositionInfo
-  -> Reference addr
-  -> Either AssemblyError BS.ByteString
-encodeRelativeW8 PositionInfo {..} solvedReference
-  = do
-    targetPosition <- integralToPosition target
-    sub targetPosition currentPosition >>= encodeI8W8
-  where
-    (target, currentPosition)        = terms solvedReference
-    terms (RefIA         targetAddr) = (targetAddr, piIA)
-    terms (RefRelativeVA targetAddr) = (targetAddr, piRelativeVA)
-    terms (RefVA         targetAddr) = (targetAddr, piVA)
+-- encodeRelativeW8
+--   :: PositionInfo -> Reference -> Either AssemblyError BS.ByteString
+-- encodeRelativeW8 PositionInfo {..} solvedReference
+--   = do
+--     targetPosition <- integralToPosition target
+--     sub targetPosition currentPosition >>= encodeI8W8
+--   where
+--     (target, currentPosition)        = terms solvedReference
+--     terms (RefIA         targetAddr) = (targetAddr, piIA)
+--     terms (RefRelativeVA targetAddr) = (targetAddr, piRelativeVA)
+--     terms (RefVA         targetAddr) = (targetAddr, piVA)
 
 encodeW32 :: Word32 -> Either AssemblyError BS.ByteString
 encodeW32 = pure . Bin.runPut . Bin.putWord32le . fromIntegral
@@ -128,7 +117,25 @@ encodeW32 = pure . Bin.runPut . Bin.putWord32le . fromIntegral
 encodeI8W8 :: Int8 -> Either AssemblyError BS.ByteString
 encodeI8W8 = pure . Bin.runPut . Bin.putWord8 . fromIntegral
 
+-- | Opcode (e.g. x86-64) defined for testing purposes
+data TestOpcode
+  = JumpAbsoluteW32 Reference -- a jump to a chosen reference type
+  | JumpRelativeW8 Reference
+  | Noop
+  | Zeroes Natural
+  | Label LabelText
+  | AlignIA Natural
+  | AlignVA Natural
+  deriving (Show, Eq)
+
 instance Encodable TestOpcode where
+  atomize = \case
+    JumpAbsoluteW32 ref ->
+      pure $ Seq.fromList [ABytes (BS.singleton 0x01), AAddrW32 ref]
+    JumpRelativeW8 ref ->
+      pure $ Seq.fromList [ABytes (BS.singleton 0x02), AAddrOffsetI8 ref]
+
+{-
   encode _ (JumpAbsoluteW32 ref)
     = do
       addr <- encodeAbsoluteW32 ref
@@ -154,53 +161,53 @@ instance Encodable TestOpcode where
   size (Zeroes n)          = n
   size Noop                = 1
   size (Label _)           = 0
+-}
 
-configW8 :: Config Word8
-configW8 = Config {..} where acVirtualBaseAddress = 0x80
+configW8 :: Config
+configW8 = Config{..} where acVirtualBaseAddress = 0x80
 
-configW32 :: Config Word32
-configW32 = Config {..} where acVirtualBaseAddress = 0x100
+configW32 :: Config
+configW32 = Config{..} where acVirtualBaseAddress = 0x100
 
 topReference
-  :: (Reference LabelText -> TestOpcode (Reference LabelText))
-  -> (LabelText -> Reference LabelText)
+  :: (Reference -> TestOpcode)
+  -> (LabelText -> Reference)
   -> Natural
-  -> [Atom (TestOpcode (Reference LabelText))]
+  -> [TestOpcode]
 topReference opcode reference zeroesAfterTop
-  = [ AOp (Label "top")
-    , AOp (Zeroes zeroesAfterTop)
-    , AOp (opcode (reference "top"))
+  = [ Label "top"
+    , Zeroes zeroesAfterTop
+    , opcode (reference "top")
     ]
 
 midReference
-  :: (Reference LabelText -> TestOpcode (Reference LabelText))
-  -> (LabelText -> Reference LabelText)
+  :: (Reference -> TestOpcode)
+  -> (LabelText -> Reference)
   -> Natural
   -> Natural
-  -> [Atom (TestOpcode (Reference LabelText))]
+  -> [TestOpcode]
 midReference opcode reference zeroesBeforeLabel zeroesAfterLabel
- = [ AOp (Zeroes zeroesBeforeLabel)
-   , AOp (Label "mid")
-   , AOp (Zeroes zeroesAfterLabel)
-   , AOp (opcode (reference "mid"))
+ = [ Zeroes zeroesBeforeLabel
+   , Label "mid"
+   , Zeroes zeroesAfterLabel
+   , opcode (reference "mid")
    ]
 
 endReference
-  :: (Reference LabelText -> TestOpcode (Reference LabelText))
-  -> (LabelText -> Reference LabelText)
+  :: (Reference -> TestOpcode)
+  -> (LabelText -> Reference)
   -> Natural
   -> Natural
-  -> [Atom (TestOpcode (Reference LabelText))]
+  -> [TestOpcode]
 endReference opcode reference zeroesBeforeReference zeroesBeforeLabel
- = [ AOp (Zeroes zeroesBeforeReference)
-   , AOp (opcode (reference "end"))
-   , AOp (Zeroes zeroesBeforeLabel)
-   , AOp (Label "end")
+ = [ Zeroes zeroesBeforeReference
+   , opcode (reference "end")
+   , Zeroes zeroesBeforeLabel
+   , Label "end"
    ]
 
 w8AbsoluteSpec
-  :: HasCallStack
-  => (LabelText -> Reference LabelText) -> String -> Word8 -> Spec
+  :: HasCallStack => (LabelText -> Reference) -> String -> Word8 -> Spec
 w8AbsoluteSpec reference referenceName baseImageOffset
   = do
     it [qq|Absolute reference of type $referenceName to the top|] $
@@ -217,8 +224,7 @@ w8AbsoluteSpec reference referenceName baseImageOffset
           bytes (0x00:0x01:(baseImageOffset + 7):0x00:0x00:0x00:0x00:[])
 
 w32RelativeSpec
-  :: HasCallStack
-  => (LabelText -> Reference LabelText) -> String -> Spec
+  :: HasCallStack => (LabelText -> Reference) -> String -> Spec
 w32RelativeSpec reference referenceName
   = do
     it [qq|Relative -1 backwards reference of type $referenceName|] $
@@ -235,14 +241,14 @@ miscSpec :: Spec
 miscSpec
   = do
     it "Empty list assembly returns no bytes" $
-      assembleW8 [] `shouldBeBytes` BS.empty
+      assembleW8 @[TestOpcode] [] `shouldBeBytes` BS.empty
 
     it "Label should not generate any bytes" $
-      assembleW8 [AOp (Label "l")] `shouldBeBytes` BS.empty
+      assembleW8 [Label "l"] `shouldBeBytes` BS.empty
 
     it "Undefined reference returns an error" $
       shouldBeError $
-        assembleW8 [AOp (JumpAbsoluteW32 (RefVA "missing"))]
+        assembleW8 [JumpAbsoluteW32 (RefVA "missing")]
 
     it "Address encoding is 32 bit Little Endian" $
       encodeW32 0x100
@@ -256,7 +262,7 @@ address8Spec
       let Config {..} = configW8
       w8AbsoluteSpec RefIA         "IA"         0x00
       w8AbsoluteSpec RefRelativeVA "RelativeVA" 0x00
-      w8AbsoluteSpec RefVA         "VA"         acVirtualBaseAddress
+      w8AbsoluteSpec RefVA         "VA"         (fromIntegral acVirtualBaseAddress)
 
 address32Spec :: Spec
 address32Spec
@@ -318,17 +324,17 @@ alignAtomSpec :: Spec
 alignAtomSpec = do
   describe "Align image atom tests" $ do
     it "Align image to zero should result in error" $
-      shouldBeError $ assembleW8 [AAlignIA 0]
+      shouldBeError $ assembleW8 [AlignIA 0]
     it "Align image to one should produce no bytes" $
-      assembleW8 [AAlignIA 1] `shouldBeBytes` BS.empty
+      assembleW8 [AlignIA 1] `shouldBeBytes` BS.empty
     it "Align image should work" $
-      assembleW8 [AOp (Zeroes 1), AAlignIA 10]
+      assembleW8 [Zeroes 1, AlignIA 10]
         `shouldBeBytes` BS.replicate 10 0
   describe "Align memory atom tests" $ do
     it "Align memory to zero should result in error" $
-      shouldBeError $ assembleW8 [AAlignVA 0]
+      shouldBeError $ assembleW8 [AlignVA 0]
     it "Align memory should not emit bytes" $
-      assembleW8 [AOp (Zeroes 1), AAlignVA 10]
+      assembleW8 [Zeroes 1, AlignVA 10]
         `shouldBeBytes` BS.singleton 0
     it "Align memory should work" $ do
       -- This assumes that the base address is already aligned to 0x10
@@ -338,19 +344,19 @@ alignAtomSpec = do
         ) `shouldBe` Right (mkPos 0)
 
       assembleW8
-        [ AOp (Zeroes 1)
-        , AAlignVA 0x10
-        , AOp (Label "here")
-        , AOp (JumpAbsoluteW32 (RefVA         "here"))
-        , AOp (JumpAbsoluteW32 (RefRelativeVA "here"))
-        , AOp (JumpAbsoluteW32 (RefIA         "here"))
+        [ Zeroes 1
+        , AlignVA 0x10
+        , Label "here"
+        , JumpAbsoluteW32 (RefVA         "here")
+        , JumpAbsoluteW32 (RefRelativeVA "here")
+        , JumpAbsoluteW32 (RefIA         "here")
         ]
           `shouldBeBytes` bytes
             [ 0x00  -- Zeroes 1
                     -- VA and RVA set to 10
                     -- "here"
                     -- absolute VA of "here":
-            , 0x01, acVirtualBaseAddress + 0x10, 0x00, 0x00, 0x00
+            , 0x01, fromIntegral acVirtualBaseAddress + 0x10, 0x00, 0x00, 0x00
                     -- absolute RVA of "here":
             , 0x01, 0x10, 0x00, 0x00, 0x00
                     -- absolute IA of "here":
@@ -361,7 +367,22 @@ alignAtomSpec = do
 multiLabelSpec :: Spec
 multiLabelSpec =
   describe "Objects with multiple labels" $
-    it "Can encode mutliple labels" pending
+    it "Can encode mutliple labels" $
+      assembleW8 (
+        Section
+          "section_begin"
+          3
+          ( SectionReferences "section_begin" "section_end"
+          )
+          "section_end"
+      ) `shouldBeBytes` bytes
+        [ -- section_begin
+          0x00, 0x00, 0x00       -- 3 zeroes
+        , 0x00, 0x00, 0x00, 0x00 -- reference to section_begin
+        , 0x00, 0x00, 0x00, 0x0B -- reference to section_end
+          -- section_end
+        ]
+
 
 -- Wraps the bytestring to produce different show output
 shouldBeBytes
@@ -379,16 +400,14 @@ shouldBeError (Right got) = expectationFailure $
   "Expecting error, got " <> show (BSByteShow got)
 shouldBeError _ = pure ()
 
-  -- | Run the assembler over an address of type Word8
+-- | Run the assembler over an address of type Word8
 assembleW8
-  :: [Atom (TestOpcode (Reference LabelText))]
-  -> Either AssemblyError BS.ByteString
-assembleW8 = assemble configW8 . Seq.fromList
+  :: forall enc . (Encodable enc) => enc -> Either AssemblyError BS.ByteString
+assembleW8 = assemble configW8
 
 assembleW32
-  :: [Atom (TestOpcode (Reference LabelText))]
-  -> Either AssemblyError BS.ByteString
-assembleW32 = assemble configW32 . Seq.fromList
+  :: forall enc . (Encodable enc) => enc -> Either AssemblyError BS.ByteString
+assembleW32 = assemble configW32
 
 bytes :: [Word8] -> BS.ByteString
 bytes = BS.pack

@@ -1,5 +1,5 @@
 module ASM.Types.Position
-  ( Position
+  ( Position (..)
   , add
   , align
   , integralToPosition

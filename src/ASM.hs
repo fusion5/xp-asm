@@ -7,10 +7,13 @@ import Common
 
 import ASM.Types
 
-import qualified Data.Sequence as Seq
+import Data.Sequence
+import Data.Int
+
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.Map as Map
 import qualified Data.Either.Extra as Either
+import qualified Data.Binary.Put as Bin
 
 -- | An assembler that produces one object, without imported/exported
 -- references. There are three passes (see assemble function):
@@ -25,12 +28,12 @@ import qualified Data.Either.Extra as Either
 -- module facilitates outputting several types of references to other 'op'
 -- elements in the sequence by means of the 'Reference' type.
 
+instance Address Word8
+instance Address Word32
+instance Address Int8
+
 addOffsets
-  :: Address address
-  => Config address
-  -> PositionInfo
-  -> Natural
-  -> Either AssemblyError PositionInfo
+  :: Config -> PositionInfo -> Natural -> Either AssemblyError PositionInfo
 addOffsets Config {..} a@PositionInfo {..} n
   = do
     basePosition <- integralToPosition acVirtualBaseAddress
@@ -41,12 +44,18 @@ addOffsets Config {..} a@PositionInfo {..} n
       , piVA         = piRelativeVA `add` opSize `add` basePosition
       }
 
+-- atomize
+--   :: Encodable op
+--   => Config address
+--   -> op --  (Reference LabelText)
+--   -> Either AssemblyError (Seq Atom)
+-- atomize = undefined
+
 -- | Extract all labels in the sequence in a Map. The key is the label and the
 -- value is positional information (PositionInfo)
 scanLabels
-  :: (Address address, Functor op, Encodable op)
-  => Config address
-  -> Seq.Seq (Atom (op (Reference LabelText)))
+  :: Config
+  -> Seq Atom
   -> Either AssemblyError (Map.Map LabelText PositionInfo)
 scanLabels c@Config{..} atoms = do
   basePosition <- integralToPosition acVirtualBaseAddress
@@ -55,17 +64,41 @@ scanLabels c@Config{..} atoms = do
     initialState basePosition = StateLabelScan
       (PositionInfo zero zero basePosition) Map.empty
 
-    scan s@StateLabelScan {..} (AOp op) = do
-      newPosition <- addOffsets c asPosition (size op)
-      newState <- labels s op
-      pure newState { asPosition = newPosition }
-    scan s@StateLabelScan {asPosition = p@PositionInfo {..}} (AAlignIA n) = do
-      newIA  <- fst <$> alignHelper piIA n
-      pure s { asPosition = p { piIA = newIA }}
-    scan s@StateLabelScan {asPosition = p@PositionInfo {..}} (AAlignVA n) = do
-      newVA  <- fst <$> alignHelper piVA n
-      newRVA <- fst <$> alignHelper piRelativeVA n
-      pure s { asPosition = p { piVA = newVA, piRelativeVA = newRVA }}
+    scan s@StateLabelScan {asPosition = p@PositionInfo {..}, ..} = \case
+      ALabel label -> do
+        newLabels <- insertLabel label p aslsLabels
+        pure s { aslsLabels = newLabels }
+      AAlignIA n -> do
+        newIA  <- fst <$> alignHelper piIA n
+        pure s { asPosition = p { piIA = newIA }}
+      AAlignVA n -> do
+        newVA  <- fst <$> alignHelper piVA n
+        newRVA <- fst <$> alignHelper piRelativeVA n
+        pure s { asPosition = p { piVA = newVA, piRelativeVA = newRVA }}
+      AAddrW8 _ -> do
+        newPosition <- addOffsets c p 1
+        pure s { asPosition = newPosition }
+      AAddrOffsetI8 _ -> do
+        newPosition <- addOffsets c p 1
+        pure s { asPosition = newPosition }
+      AAddrW32 _ -> do
+        newPosition <- addOffsets c p 4
+        pure s { asPosition = newPosition }
+      ABytes bs -> do
+        newPosition <- addOffsets c p (fromIntegral $ BS.length bs)
+        pure s { asPosition = newPosition }
+
+
+    -- scan s@StateLabelScan{..} (ALabel label) = do
+    --   newLabels <- insertLabel label asPosition aslsLabels
+    --   pure s { aslsLabels = newLabels }
+    -- scan s@StateLabelScan {asPosition = p@PositionInfo {..}} (AAlignIA n) = do
+    --   newIA  <- fst <$> alignHelper piIA n
+    --   pure s { asPosition = p { piIA = newIA }}
+    -- scan s@StateLabelScan {asPosition = p@PositionInfo {..}} (AAlignVA n) = do
+    --   newVA  <- fst <$> alignHelper piVA n
+    --   newRVA <- fst <$> alignHelper piRelativeVA n
+    --   pure s { asPosition = p { piVA = newVA, piRelativeVA = newRVA }}
 
 -- | Obvious
 alignHelper :: Position -> Natural -> Either AssemblyError (Position, Position)
@@ -75,65 +108,83 @@ alignHelper p n
     pure (p `add` delta, delta)
 
 -- | Solve label references to dictionary addresses.
+{-
 solveReferences
-  :: (Traversable op, Address address, Encodable op)
+  :: Address address
   => Config address
   -> Map.Map LabelText PositionInfo
-  -> Seq.Seq (Atom (op (Reference LabelText)))
-  -> Either AssemblyError (Seq.Seq (Atom (op (Reference address))))
+  -> Seq Atom
+  -> Either AssemblyError (Seq Atom)
 solveReferences c labelDictionary atoms
-    = asrsAtoms <$> foldM (solveAtomReferences c labelDictionary) initialState
-        atoms
+    = asrsAtoms <$>
+        foldM (solveAtomReferences c labelDictionary) initialState atoms
   where
-    initialState = StateReferenceSolve Seq.empty
+    initialState = StateReferenceSolve empty
+-}
 
 -- | Solve references possibly present in an Atom
+{-
 solveAtomReferences
-  :: forall address op
-  .  (Traversable op, Address address, Encodable op)
+  :: forall address
+  .  Address address
   => Config address
   -> Map.Map LabelText PositionInfo
-  -> StateReferenceSolve op address
-  -> Atom (op (Reference LabelText))
-  -> Either AssemblyError (StateReferenceSolve op address)
-solveAtomReferences _ labelDictionary s@StateReferenceSolve {..} = go
+  -> StateReferenceSolve address
+  -> Atom (Reference LabelText)
+  -> Either AssemblyError (StateReferenceSolve address)
+solveAtomReferences _ labelDictionary s@StateReferenceSolve {..} = \case
+    AAlignIA n ->
+      pure s
+        { asrsAtoms = asrsAtoms |> AAlignIA n
+        }
+    AAlignVA n ->
+      pure s
+        { asrsAtoms = asrsAtoms |> AAlignVA n
+        }
+    ABytes xs ->
+      pure s
+        { asrsAtoms = asrsAtoms |> ABytes xs
+        }
+    ALabel lab ->
+      pure s
+        { asrsAtoms = asrsAtoms |> ALabel lab }
+    AAddr ref -> do
+      solvedAddr <- AAddr <$> solveReference ref
+      pure s
+        { asrsAtoms = asrsAtoms |> solvedAddr
+        }
   where
-    go (AOp opUnsolved) = do
-      opSolved <- AOp <$> Prelude.mapM solveReference opUnsolved
-      pure s
-        { asrsAtoms = asrsAtoms Seq.|> opSolved
-        }
-    go (AAlignIA n) =
-      pure s
-        { asrsAtoms = asrsAtoms Seq.|> AAlignIA n
-        }
-    go (AAlignVA n) =
-      pure s
-        { asrsAtoms = asrsAtoms Seq.|> AAlignVA n
-        }
-
     query labelText = Either.maybeToEither (ReferenceMissing labelText)
                         (Map.lookup labelText labelDictionary)
 
     addressOf labelText f = query labelText >>= positionDowncast . f
 
     solveReference
-      :: Reference LabelText -> Either AssemblyError (Reference address)
+      :: Reference LabelText -> Either AssemblyError ({- Reference -} address)
     solveReference (RefVA labelText) =
-      RefVA         <$> addressOf labelText piVA
+      {- RefVA         <$> -} addressOf labelText piVA
     solveReference (RefRelativeVA labelText) =
-      RefRelativeVA <$> addressOf labelText piRelativeVA
+      {- RefRelativeVA <$> -} addressOf labelText piRelativeVA
     solveReference (RefIA labelText) =
-      RefIA         <$> addressOf labelText piIA
+      {- RefIA         <$> -} addressOf labelText piIA
+-}
+
+encodeW32 :: Word32 -> Either AssemblyError BS.ByteString
+encodeW32 = pure . Bin.runPut . Bin.putWord32le . fromIntegral
+
+encodeW8 :: Word8 -> Either AssemblyError BS.ByteString
+encodeW8 = pure . Bin.runPut . Bin.putWord8 . fromIntegral
+
+encodeI8W8 :: Int8 -> Either AssemblyError BS.ByteString
+encodeI8W8 = pure . Bin.runPut . Bin.putWord8 . fromIntegral
 
 -- | Encode solved references to ByteString. Keeps track of current positions
-encodeSolved
-  :: forall op address
-  .  (Address address, Encodable op)
-  => Config address
-  -> Seq.Seq (Atom (op (Reference address)))
+encode
+  :: Config
+  -> Map.Map LabelText PositionInfo
+  -> Seq Atom
   -> Either AssemblyError BS.ByteString
-encodeSolved c@Config {..} atoms
+encode c@Config{..} labelMap atoms
     = do
       basePosition <- integralToPosition acVirtualBaseAddress
       sesEncoded <$> foldM encodeAtom (initialState basePosition) atoms
@@ -141,40 +192,67 @@ encodeSolved c@Config {..} atoms
     initialState basePosition = StateEncodeSolved
       (PositionInfo zero zero basePosition) ""
 
-    encodeAtom s@StateEncodeSolved {..} (AOp op)
-      = do
-        encodedOp   <- encode sesPosition op
-        newPosition <-
-          assert (fromIntegral (BS.length encodedOp) == size op) $
-            addOffsets c sesPosition (size op)
-        pure s
-          { sesPosition = newPosition
-          , sesEncoded  = sesEncoded <> encodedOp
-          }
-    encodeAtom s@StateEncodeSolved {sesPosition = pos@PositionInfo {..}, ..}
-      (AAlignIA n)
-      = do
-        (newIA, delta) <- alignHelper piIA n
-        replicateCount <- positionDowncast delta
-        pure s
-          { sesPosition = pos { piIA = newIA }
-          , sesEncoded  = sesEncoded <> BS.replicate replicateCount 0x00
-          }
-    encodeAtom s@StateEncodeSolved {sesPosition = pos@PositionInfo {..}}
-      (AAlignVA n)
-      = do
-        newVA  <- fst <$> alignHelper piVA n
-        newRVA <- fst <$> alignHelper piRelativeVA n
-        pure s
-          { sesPosition = pos { piVA = newVA, piRelativeVA = newRVA }
-          }
+    query labelText = Either.maybeToEither (ReferenceMissing labelText)
+                        (Map.lookup labelText labelMap)
 
-assemble
-  :: (Address address, Traversable op, Encodable op)
-  => Config address
-  -> Seq.Seq (Atom (op (Reference LabelText)))
-  -> Either AssemblyError BS.ByteString
+    addressOf labelText f = query labelText >>= positionDowncast . f
+
+    solveReference :: Address a => Reference -> Either AssemblyError a
+    solveReference ref = addressOf labelText f
+      where (labelText, f) = getter ref
+    -- solveReference (RefVA labelText) =
+    --   {- RefVA         <$> -} addressOf labelText piVA
+    -- solveReference (RefRelativeVA labelText) =
+    --   {- RefRelativeVA <$> -} addressOf labelText piRelativeVA
+    -- solveReference (RefIA labelText) =
+    --   {- RefIA         <$> -} addressOf labelText piIA
+
+    emitBytes s@StateEncodeSolved{..} bytes = do
+      advancePosition <- addOffsets c sesPosition (fromIntegral $ BS.length bytes)
+      pure s
+        { sesPosition = advancePosition -- advance the position with length bytes
+        , sesEncoded = sesEncoded <> bytes
+        }
+
+    encodeAtom s@StateEncodeSolved {sesPosition = pos@PositionInfo {..}, ..} =
+      \case
+        ALabel _ -> pure s
+        AAddrW8 ref -> solveReference ref >>= encodeW8 >>= emitBytes s
+        AAddrW32 ref -> solveReference ref >>= encodeW32 >>= emitBytes s
+        AAddrOffsetI8 ref -> do
+          let (referenceLabel, positionGetter) = getter ref
+          targetPosition <- positionGetter <$> query referenceLabel
+          offset <- sub targetPosition (positionGetter pos)
+          encodeI8W8 offset >>= emitBytes s
+        ABytes bytes -> do
+          advancePosition <- addOffsets c pos (fromIntegral $ BS.length bytes)
+          pure s
+            { sesPosition = advancePosition
+            , sesEncoded = sesEncoded <> bytes
+            }
+        AAlignIA n -> do
+          (newIA, delta) <- alignHelper piIA n
+          replicateCount <- positionDowncast delta
+          pure s
+            { sesPosition = pos { piIA = newIA }
+            , sesEncoded  = sesEncoded <> BS.replicate replicateCount 0x00
+            }
+        (AAlignVA n) -> do
+          newVA  <- fst <$> alignHelper piVA n
+          newRVA <- fst <$> alignHelper piRelativeVA n
+          pure s
+            { sesPosition = pos { piVA = newVA, piRelativeVA = newRVA }
+            }
+
+getter :: Reference -> (LabelText, PositionInfo -> Position)
+getter (RefIA         target) = (target, piIA)
+getter (RefRelativeVA target) = (target, piRelativeVA)
+getter (RefVA         target) = (target, piVA)
+
+assemble :: Encodable op => Config -> op -> Either AssemblyError BS.ByteString
 assemble cfg input
   = do
-    labelMap <- scanLabels cfg input
-    solveReferences cfg labelMap input >>= encodeSolved cfg
+    atoms    <- atomize input
+    labelMap <- scanLabels cfg atoms
+    -- solveReferences cfg labelMap atoms >>= encodeSolved cfg
+    encode cfg labelMap atoms

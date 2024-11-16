@@ -140,6 +140,23 @@ Add/test objects that add to RVA but not to IA
 
 *** Activity stack
 
+- Major refactoring to make encodable objects monomorphic. Do not reflect 
+  address solving at the type level. That was nice but not required. 
+  AOp disappears. New Encodable atomize of type:
+
+    class Encodable op where
+      -- what to generate atoms for, without solved references
+      atomize :: op -> Either AssemblyError (Seq Atom)
+
+  All data types should be atomizable. Atoms should support all features
+  like signed offsets for local relative jumps, absolute address references,
+  for multiple sizes. If another endianness is desired then make that a 
+  configuration parameter.
+  Thus a single constructor can produce a sequence of an atoms not just
+  bytes as before. This is motivated by the need to have complex data like
+  TestLinkableObject that have multiple references in a single constructor.
+  TestLinkableObject is like the ELF format.
+
 - Write a test for TestLinkableObject
 - assemble should work on any Functor?
 - Opcodes need labels as well. Within an opcode there should be references to

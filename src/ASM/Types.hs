@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module ASM.Types
   ( Address
@@ -11,7 +12,7 @@ module ASM.Types
   , Reference (..)
   , StateEncodeSolved (..)
   , StateLabelScan (..)
-  , StateReferenceSolve (..)
+  , StateAtomize (..)
   , module ASM.Types.Position
   , module ASM.Types.AssemblyError
   , insertLabel
@@ -20,14 +21,14 @@ module ASM.Types
   ) where
 
 import Common
+import Data.Sequence as Seq
 
 import ASM.Types.Position hiding (mkPos)
 import ASM.Types.AssemblyError
-import qualified Data.ByteString.Lazy as BS
-import qualified Data.Map as Map
-import qualified Data.Sequence as Seq
-import qualified Data.Text as Text
+import Data.ByteString.Lazy as BS
 
+import qualified Data.Map as Map
+import qualified Data.Text as Text
 
 -- | A Label helps to refer by name to the program point where the label is
 type LabelText = Text.Text
@@ -35,22 +36,18 @@ type LabelText = Text.Text
 -- | Define the encoding of opcodes outside of the library.
 -- | Why not use the Binary class? It doesn't easily allow nice error handling.
 class Encodable op where
-  labels
-    :: StateLabelScan address
-    -> op (Reference address) -- what to scan, without solved references
-    -> Either AssemblyError (StateLabelScan address)
-  encode
-    :: Address address        -- concrete address, i.e. solved
-    => PositionInfo           -- needed to compute e.g. relative jump offsets
-    -> op (Reference address) -- what to encode, with solved references
-    -> Either AssemblyError BS.ByteString
-  -- TODO: Why can't we can get rid of this and use the size of encode, which
-  -- would be lazy and wouldn't actually require computing the encoding?
-  size :: op a -> Natural
+  -- what to generate atoms for, without solved references
+  atomize :: op -> Either AssemblyError (Seq Atom)
+
+instance Encodable op => Encodable [op] where
+  atomize [] = Right Seq.empty
+  atomize (x:xs) = (<>) <$> atomize x <*> atomize xs
 
 -- | Memory / program addresses have certain constraints. Note that this
 -- allows for negative numbers, maybe it's not ideal
 class (Integral a, Ord a, Bounded a) => Address a where
+  -- toBS :: a -> ByteString
+  -- addressSize :: a -> Natural
 
 data PositionInfo
   = PositionInfo
@@ -66,36 +63,39 @@ data PositionInfo
 
 -- The type of references and solved references defined here must cover the
 -- needs of all assemblers defined using ASM.
-data Reference address
+data Reference
   = -- | Image Address (in-file address, offset from the beginning of
     -- the file) of label
-    RefIA address
+    RefIA LabelText
   | -- | Relative Virtual Address (in-memory address minus image base
     -- address) of label. In other words relative to the image base address.
-    RefRelativeVA address
+    RefRelativeVA LabelText
   | -- | Virtual Address (in-memory address) of label
-    RefVA address
-  deriving (Show)
+    RefVA LabelText
+  deriving (Show, Eq, Generic)
 
--- | An Atom is either an operation (typically called opcode) or a label.
-data Atom op
-  = -- | The op type is a subset of the instruction set, e.g. for x86
-    -- jmp, mov, etc. which can be polymorphic in the representation of
-    -- address references
-    AOp op
-  |  -- | Emit as many zeroes as needed to reach a multiple given as parameter.
-    -- Note that it doesn't alter the virtual addresses; for that, use AlignVA
-    AAlignIA Natural
-  -- | Aligns both VA and RVA (memory) to a specified alignment. Does not emit
-  -- zeroes in the image; for that, use AAlignIA
-  | AAlignVA Natural
+data Atom
+  = ALabel        LabelText
+  | AAddrW8       Reference
+  | AAddrW32      Reference
+  | AAddrOffsetI8 Reference
+  | ABytes        ByteString
+  | AAlignIA      Natural
+  | AAlignVA      Natural
   deriving (Show, Eq, Generic)
 
 -- | Constant parameters for the assembler.
-data Config address
+data Config
   = Config
     { -- | The in-memory image base location
-      acVirtualBaseAddress :: address
+      acVirtualBaseAddress :: Natural
+    }
+
+data StateAtomize address
+  = StateAtomize
+    { atPosition :: PositionInfo
+      -- | Atoms built so far
+    , atAtoms:: Seq Atom
     }
 
 -- | The label scanner traverses the program and builds a Map of labels it
@@ -138,13 +138,6 @@ updatePosition
   :: (PositionInfo -> PositionInfo)
   -> StateLabelScan address -> StateLabelScan address
 updatePosition f s = s { asPosition = f (asPosition s) }
-
--- | The reference solver uses the Map of labels and their address information
--- to solve references to labels. this is its state
-newtype StateReferenceSolve op address
-  = StateReferenceSolve
-    { asrsAtoms :: Seq.Seq (Atom (op (Reference address)))
-    }
 
 data StateEncodeSolved address
   = StateEncodeSolved

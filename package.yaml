@@ -9,6 +9,7 @@ default-extensions:
   - DataKinds
   - ScopedTypeVariables
   - QuasiQuotes
+  - LambdaCase
 
 dependencies:
   - base
