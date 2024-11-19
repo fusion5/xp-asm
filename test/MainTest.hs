@@ -48,27 +48,20 @@ data TestLinkableObject
   deriving (Show, Eq)
 
 instance Encodable TestLinkableObject where
-  atomize = undefined
-  {-
-  encode pI Section{..} = do
-    subBS <- encode pI subsection
-    pure $ BS.replicate (fromIntegral numberOfZeroes) 0x00 <> subBS
-  encode _ SectionReferences{..} = do
-    begin <- encodeAbsoluteW32 beginAddress
-    end   <- encodeAbsoluteW32 endAddress
-    pure $ begin <> end
-
-  labels s0 Section{..} = do
-    s1 <- updateLabels (insertLabel beginLabel (asPosition s0)) s0
-    -- add the size of numberOfZeroes to the position
-    s2 <- labels (updatePosition (addOffsets ) s1) subsection
-    -- add the size of subsection to the position
-    updateLabels (insertLabel endLabel (asPosition s2)) s2
-  labels s SectionReferences{} = pure s
-
-  size Section{..} = numberOfZeroes + size subsection
-  size SectionReferences{} = 8
-  -}
+  atomize Section{..} = do
+    subSection <- atomize subsection
+    pure
+      $   Seq.singleton (ALabel beginLabel)
+      <>  subSection
+      <>  Seq.fromList
+            [ ABytes (BS.replicate (fromIntegral numberOfZeroes) 0)
+            , ALabel endLabel
+            ]
+  atomize SectionReferences{..} = do
+    pure $ Seq.fromList
+      [ AAddrW32 (RefVA tloBeginReference)
+      , AAddrW32 (RefVA tloEndReference)
+      ]
 
 -- Example of encoding of an address
 -- encodeAbsoluteW32
@@ -134,6 +127,14 @@ instance Encodable TestOpcode where
       pure $ Seq.fromList [ABytes (BS.singleton 0x01), AAddrW32 ref]
     JumpRelativeW8 ref ->
       pure $ Seq.fromList [ABytes (BS.singleton 0x02), AAddrOffsetI8 ref]
+    Noop ->
+      pure $ pure $ ABytes $ BS.singleton 0x03
+    Zeroes n ->
+      pure $ pure $ ABytes $ BS.replicate (fromIntegral n) 0x00
+    Label text ->
+      pure $ pure $ ALabel text
+    AlignIA n -> pure $ pure $ AAlignIA n
+    AlignVA n -> pure $ pure $ AAlignVA n
 
 {-
   encode _ (JumpAbsoluteW32 ref)
