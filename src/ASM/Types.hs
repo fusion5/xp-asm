@@ -8,7 +8,7 @@ module ASM.Types
   , Encodable (..)
   , SomeExceptionWrap (..)
   , LabelText
-  , PositionInfo (..)
+  , Positions (..)
   , Reference (..)
   , StateEncodeSolved (..)
   , StateLabelScan (..)
@@ -49,8 +49,8 @@ class (Integral a, Ord a, Bounded a) => Address a where
   -- toBS :: a -> ByteString
   -- addressSize :: a -> Natural
 
-data PositionInfo
-  = PositionInfo
+data Positions
+  = Positions
   { -- | Image Address e.g. of a label (in-file address, offset from the
     -- beginning of the file)
     piIA         :: Position
@@ -59,7 +59,7 @@ data PositionInfo
     piRelativeVA :: Position
   , -- | Virtual address e.g. of a label
     piVA         :: Position
-  }
+  } deriving (Show, Eq)
 
 -- The type of references and solved references defined here must cover the
 -- needs of all assemblers defined using ASM.
@@ -78,7 +78,11 @@ data Atom
   = ALabel        LabelText
   | AAddrW8       Reference
   | AAddrW32      Reference
-  | AAddrOffsetI8 Reference
+  | AAddrOffsetI8
+    { -- Where does the offset start from relative to the current position:
+      offsetFromDelta :: Integer
+    , offsetTo        :: Reference
+    }
   | ABytes        ByteString
   | AAlignIA      Natural
   | AAlignVA      Natural
@@ -93,7 +97,7 @@ data Config
 
 data StateAtomize address
   = StateAtomize
-    { atPosition :: PositionInfo
+    { atPosition :: Positions
       -- | Atoms built so far
     , atAtoms:: Seq Atom
     }
@@ -110,24 +114,24 @@ data StateLabelScan address
       --     memory. This is initially 0 and it is often refered to as RVA
       --     (Relative Value Address) in Microsoft documentation.
       --   - Current memory address
-      asPosition :: PositionInfo
+      asPosition :: Positions
       -- | Encountered labels so far
-    , aslsLabels :: Map.Map LabelText PositionInfo
+    , aslsLabels :: Map.Map LabelText Positions
     }
 
 insertLabel
   :: LabelText
-  -> PositionInfo
-  -> Map.Map LabelText PositionInfo
-  -> Either AssemblyError (Map.Map LabelText PositionInfo)
+  -> Positions
+  -> Map.Map LabelText Positions
+  -> Either AssemblyError (Map.Map LabelText Positions)
 insertLabel label positionInfo m
   = case Map.lookup label m of
       Just _existingPosition -> Left $ ReferenceExists label
       Nothing -> pure $ Map.insert label positionInfo m
 
 updateLabels
-  :: (Map.Map LabelText PositionInfo
-      -> Either AssemblyError (Map.Map LabelText PositionInfo))
+  :: (Map.Map LabelText Positions
+      -> Either AssemblyError (Map.Map LabelText Positions))
   -> StateLabelScan address
   -> Either AssemblyError (StateLabelScan address)
 updateLabels f s = do
@@ -135,12 +139,12 @@ updateLabels f s = do
   pure $ s { aslsLabels = s' }
 
 updatePosition
-  :: (PositionInfo -> PositionInfo)
+  :: (Positions -> Positions)
   -> StateLabelScan address -> StateLabelScan address
 updatePosition f s = s { asPosition = f (asPosition s) }
 
 data StateEncodeSolved address
   = StateEncodeSolved
-    { sesPosition :: PositionInfo
+    { sesPosition :: Positions
     , sesEncoded  :: BS.ByteString
     }

@@ -36,10 +36,10 @@ main = hspec $
 -- Supports recursion.
 data TestLinkableObject
   = Section
-    { beginLabel     :: LabelText
-    , numberOfZeroes :: Natural
-    , subsection     :: TestLinkableObject
-    , endLabel       :: LabelText
+    { tloBeginLabel     :: LabelText
+    , tloNumberOfZeroes :: Natural
+    , tloSubsection     :: TestLinkableObject
+    , tloEndLabel       :: LabelText
     }
   | SectionReferences
     { tloBeginReference :: LabelText
@@ -49,18 +49,16 @@ data TestLinkableObject
 
 instance Encodable TestLinkableObject where
   atomize Section{..} = do
-    subSection <- atomize subsection
+    subSection <- atomize tloSubsection
     pure
-      $   Seq.singleton (ALabel beginLabel)
+      $   Seq.singleton (ALabel tloBeginLabel)
+      <>  Seq.singleton (ABytes (BS.replicate (fromIntegral tloNumberOfZeroes) 0))
       <>  subSection
-      <>  Seq.fromList
-            [ ABytes (BS.replicate (fromIntegral numberOfZeroes) 0)
-            , ALabel endLabel
-            ]
+      <>  Seq.singleton (ALabel tloEndLabel)
   atomize SectionReferences{..} = do
     pure $ Seq.fromList
-      [ AAddrW32 (RefVA tloBeginReference)
-      , AAddrW32 (RefVA tloEndReference)
+      [ AAddrW8 (RefIA tloBeginReference)
+      , AAddrW8 (RefIA tloEndReference)
       ]
 
 -- Example of encoding of an address
@@ -126,7 +124,7 @@ instance Encodable TestOpcode where
     JumpAbsoluteW32 ref ->
       pure $ Seq.fromList [ABytes (BS.singleton 0x01), AAddrW32 ref]
     JumpRelativeW8 ref ->
-      pure $ Seq.fromList [ABytes (BS.singleton 0x02), AAddrOffsetI8 ref]
+      pure $ Seq.fromList [ABytes (BS.singleton 0x02), AAddrOffsetI8 1 ref]
     Noop ->
       pure $ pure $ ABytes $ BS.singleton 0x03
     Zeroes n ->
@@ -135,34 +133,6 @@ instance Encodable TestOpcode where
       pure $ pure $ ALabel text
     AlignIA n -> pure $ pure $ AAlignIA n
     AlignVA n -> pure $ pure $ AAlignVA n
-
-{-
-  encode _ (JumpAbsoluteW32 ref)
-    = do
-      addr <- encodeAbsoluteW32 ref
-      pure $ BS.pack [0x01] <> addr
-  encode pos (JumpRelativeW8 ref)
-    = do
-      addr <- encodeRelativeW8 pos ref
-      pure $ BS.pack [0x02] <> addr
-  encode _ Noop
-    = pure $ BS.singleton 0x03
-  encode _ (Zeroes n)
-    = pure $ BS.replicate (fromIntegral n) 0x00
-  encode _ (Label _)
-    = pure BS.empty
-
-  labels s@StateLabelScan{..} (Label labelText)
-    = pure s { aslsLabels = Map.insert labelText asPosition aslsLabels }
-  labels s _ = pure s
-
-  -- | Warning, this should match the Encodable lengths (to be tested)
-  size (JumpAbsoluteW32 _) = 1 + 4
-  size (JumpRelativeW8 _)  = 1 + 1
-  size (Zeroes n)          = n
-  size Noop                = 1
-  size (Label _)           = 0
--}
 
 configW8 :: Config
 configW8 = Config{..} where acVirtualBaseAddress = 0x80
@@ -373,14 +343,13 @@ multiLabelSpec =
         Section
           "section_begin"
           3
-          ( SectionReferences "section_begin" "section_end"
-          )
+          (SectionReferences "section_begin" "section_end")
           "section_end"
       ) `shouldBeBytes` bytes
         [ -- section_begin
-          0x00, 0x00, 0x00       -- 3 zeroes
-        , 0x00, 0x00, 0x00, 0x00 -- reference to section_begin
-        , 0x00, 0x00, 0x00, 0x0B -- reference to section_end
+          0x00, 0x00, 0x00 -- 3 zeroes
+        , 0x00             -- reference to section_begin
+        , 0x05             -- reference to section_end
           -- section_end
         ]
 
