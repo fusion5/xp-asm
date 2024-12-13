@@ -6,11 +6,12 @@ module ASM.Types
   , Atom (..)
   , Config (..)
   , Encodable (..)
-  , SomeExceptionWrap (..)
+  , ExprReference (..)
   , LabelText
   , Positions (..)
   , Reference (..)
-  , StateEncodeSolved (..)
+  , SomeExceptionWrap (..)
+  , StateEncode (..)
   , StateLabelScan (..)
   , StateAtomize (..)
   , module ASM.Types.Position
@@ -74,18 +75,23 @@ data Reference
     RefVA LabelText
   deriving (Show, Eq, Generic)
 
+data ExprReference
+  = ExprRef  Reference
+  | ExprDiff ExprReference ExprReference
+  | ExprSum  ExprReference ExprReference
+  | ExprCurrentIA
+  | ExprCurrentRelativeVA
+  | ExprCurrentVA
+  deriving (Show, Eq, Generic)
+
 data Atom
-  = ALabel        LabelText
-  | AAddrW8       Reference
-  | AAddrW32      Reference
-  | AAddrOffsetI8
-    { -- Where does the offset start from relative to the current position:
-      offsetFromDelta :: Integer
-    , offsetTo        :: Reference
-    }
-  | ABytes        ByteString
-  | AAlignIA      Natural
-  | AAlignVA      Natural
+  = ALabel   LabelText
+  | AExprW8  ExprReference
+  | AExprW32 ExprReference
+  | AExprI8  ExprReference
+  | ABytes   ByteString
+  | AAlignIA Natural
+  | AAlignVA Natural
   deriving (Show, Eq, Generic)
 
 -- | Constant parameters for the assembler.
@@ -143,8 +149,8 @@ updatePosition
   -> StateLabelScan address -> StateLabelScan address
 updatePosition f s = s { asPosition = f (asPosition s) }
 
-data StateEncodeSolved address
-  = StateEncodeSolved
+data StateEncode address
+  = StateEncode
     { sesPosition :: Positions
     , sesEncoded  :: BS.ByteString
     }

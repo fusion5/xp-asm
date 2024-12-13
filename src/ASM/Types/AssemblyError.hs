@@ -15,6 +15,8 @@ instance Eq SomeExceptionWrap where
 
 data AssemblyError
   = Arithmetic SomeExceptionWrap
+  | AddException Integer Integer SomeExceptionWrap
+  | Downcast Integer SomeExceptionWrap
   | ReferenceMissing Text.Text
   | -- | In a calculated label difference value that gives the number of bytes
     -- between the "From" label and the "To" label, the result must be

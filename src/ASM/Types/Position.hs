@@ -2,9 +2,13 @@ module ASM.Types.Position
   ( Position (..)
   , add
   , align
+  , downcast
   , integralToPosition
   , mkPos -- for tests only, not really unsafe but it's an escape hatch
   , positionDowncast
+  , positionToInteger
+  , safeAdd
+  , safeSub
   , sub
   , zero
   ) where
@@ -27,8 +31,8 @@ import qualified Data.Either.Extra as Either
 newtype Position = Position Natural
   deriving (Show, Eq)
 
-newtype PositionDifference = PositionDifference Integer
-  deriving (Show, Eq)
+-- newtype PositionDifference = PositionDifference Integer
+--   deriving (Show, Eq)
 
 -- | Convert an address or some encoding size to Position.
 -- Unfortunately i don't know how to represent non-negative bounded numbers at
@@ -58,11 +62,22 @@ positionDowncast
   :: (Integral a, Bounded a) => Position -> Either AssemblyError a
 positionDowncast (Position n) = downcast n
 
+positionToInteger :: Position -> Integer
+positionToInteger (Position n) = fromIntegral n
+
 downcast
   :: (Integral a, Integral b, Bounded b)
   => a -> Either AssemblyError b
-downcast = Either.mapLeft (Arithmetic . ExceptionWrap) . B.fromIntegerBounded
-         . fromIntegral
+downcast x = Either.mapLeft (Downcast (fromIntegral x) . ExceptionWrap)
+           $ B.fromIntegerBounded
+           $ fromIntegral x
+
+safeAdd :: (Integral a, Bounded a, Num a, Ord a) => a -> a -> Either AssemblyError a
+safeAdd v1 v2 = Either.mapLeft
+  (AddException (fromIntegral v1) (fromIntegral v2) . ExceptionWrap) $ B.plusBounded v1 v2
+
+safeSub :: (Bounded a, Num a, Ord a) => a -> a -> Either AssemblyError a
+safeSub v1 v2 = Either.mapLeft (Arithmetic . ExceptionWrap) $ B.plusBounded v1 v2
 
 -- | How many bytes are needed to reach the next bigger multiple of n
 align :: Natural -> Position -> Either AssemblyError Position

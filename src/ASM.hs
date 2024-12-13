@@ -70,13 +70,13 @@ scanLabels c@Config{..} atoms = do
         newVA  <- fst <$> alignHelper piVA n
         newRVA <- fst <$> alignHelper piRelativeVA n
         pure s { asPosition = p { piVA = newVA, piRelativeVA = newRVA }}
-      AAddrW8 _ -> do
+      AExprW8 _ -> do
         newPosition <- addOffsets c p 1
         pure s { asPosition = newPosition }
-      AAddrOffsetI8 _ _ -> do
+      AExprI8 _ -> do
         newPosition <- addOffsets c p 1
         pure s { asPosition = newPosition }
-      AAddrW32 _ -> do
+      AExprW32 _ -> do
         newPosition <- addOffsets c p 4
         pure s { asPosition = newPosition }
       ABytes bs -> do
@@ -110,37 +110,49 @@ encode c@Config{..} labelMap atoms
       basePosition <- integralToPosition acVirtualBaseAddress
       sesEncoded <$> foldM encodeAtom (initialState basePosition) atoms
   where
-    initialState basePosition = StateEncodeSolved
+    initialState basePosition = StateEncode
       (Positions zero zero basePosition) ""
 
     query labelText = Either.maybeToEither (ReferenceMissing labelText)
                         (Map.lookup labelText labelMap)
 
-    addressOf labelText f = query labelText >>= positionDowncast . f
+    addressOf labelText f = f <$> query labelText -- >>= {- positionDowncast . -} f
 
-    solveReference :: Address a => Reference -> Either AssemblyError a
-    solveReference ref = addressOf labelText f
-      where (labelText, f) = getter ref
+    queryReference :: Reference -> Either AssemblyError Position
+    queryReference ref = addressOf labelText f
+      where
+        f         = getter ref
+        labelText = getLabel ref
 
-    emitBytes s@StateEncodeSolved{..} bytes = do
+    emitBytes s@StateEncode{..} bytes = do
       advancePosition <- addOffsets c sesPosition (fromIntegral $ BS.length bytes)
       pure s
         { sesPosition = advancePosition -- advance the position with length bytes
         , sesEncoded = sesEncoded <> bytes
         }
 
-    encodeAtom s@StateEncodeSolved {sesPosition = pos@Positions{..}, ..} =
+    solveExpr :: Positions -> ExprReference -> Either AssemblyError Integer
+    solveExpr _ (ExprRef ref) = positionToInteger <$> queryReference ref
+    solveExpr p (ExprDiff er1 er2)
+      = do
+          v1 <- solveExpr p er1
+          v2 <- solveExpr p er2
+          pure $ v1 - v2
+    solveExpr p (ExprSum er1 er2)
+      = do
+          v1 <- solveExpr p er1
+          v2 <- solveExpr p er2
+          pure $ v1 + v2
+    solveExpr positions ExprCurrentIA         = pure $ positionToInteger $ piIA positions
+    solveExpr positions ExprCurrentRelativeVA = pure $ positionToInteger $ piRelativeVA positions
+    solveExpr positions ExprCurrentVA         = pure $ positionToInteger $ piVA positions
+
+    encodeAtom s@StateEncode{sesPosition = pos@Positions{..}, ..} =
       \case
-        ALabel _ -> pure s
-        AAddrW8 ref -> solveReference ref >>= encodeW8 >>= emitBytes s
-        AAddrW32 ref -> solveReference ref >>= encodeW32 >>= emitBytes s
-        AAddrOffsetI8{..} -> do
-          let (referenceLabel, positionGetter) = getter offsetTo
-          targetPosition <- positionGetter <$> query referenceLabel
-          offset :: Int8 <- targetPosition `sub` positionGetter pos
-          -- TODO: bound checks!
-          let offsetWithDelta :: Int8 = offset + fromIntegral offsetFromDelta
-          encodeI8W8 offsetWithDelta >>= emitBytes s
+        ALabel   _    -> pure s
+        AExprW8  expr -> solveExpr pos expr >>= downcast >>= encodeW8   >>= emitBytes s
+        AExprW32 expr -> solveExpr pos expr >>= downcast >>= encodeW32  >>= emitBytes s
+        AExprI8  expr -> solveExpr pos expr >>= downcast >>= encodeI8W8 >>= emitBytes s
         ABytes bytes -> do
           advancePosition <- addOffsets c pos (fromIntegral $ BS.length bytes)
           pure s
@@ -161,10 +173,27 @@ encode c@Config{..} labelMap atoms
             { sesPosition = pos { piVA = newVA, piRelativeVA = newRVA }
             }
 
-getter :: Reference -> (LabelText, Positions -> Position)
-getter (RefIA         target) = (target, piIA)
-getter (RefRelativeVA target) = (target, piRelativeVA)
-getter (RefVA         target) = (target, piVA)
+getLabel :: Reference -> LabelText
+getLabel (RefIA         label) = label
+getLabel (RefRelativeVA label) = label
+getLabel (RefVA         label) = label
+
+getter :: Reference -> Positions -> Position
+getter RefIA{}         = piIA
+getter RefRelativeVA{} = piRelativeVA
+getter RefVA{}         = piVA
+
+-- solveReferenceToPosition
+--   :: forall a . Address a
+--   => Reference -> Positions -> Either AssemblyError a
+-- solveReferenceToPosition (RefIA _) pos = positionDowncast $ piIA pos
+-- solveReferenceToPosition (RefRelativeVA _) pos = positionDowncast $ piRelativeVA pos
+-- solveReferenceToPosition (RefVA _) pos = positionDowncast $ piVA pos
+
+-- getter :: Reference -> (LabelText, Positions -> Position)
+-- getter (RefIA         target) = (target, piIA)
+-- getter (RefRelativeVA target) = (target, piRelativeVA)
+-- getter (RefVA         target) = (target, piVA)
 
 assemble :: Encodable op => Config -> op -> Either AssemblyError BS.ByteString
 assemble cfg input

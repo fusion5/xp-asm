@@ -140,8 +140,9 @@ Add/test objects that add to RVA but not to IA
 
 *** Activity stack
 
+- Don't use a constructor for each size, use parameters
 - Major refactoring to make encodable objects monomorphic. Do not reflect 
-  address solving at the type level. That was nice but not required. 
+  address solving as type parameters. That was nice but not required. 
   AOp disappears. New Encodable atomize of type:
 
     class Encodable op where
@@ -152,7 +153,7 @@ Add/test objects that add to RVA but not to IA
   like signed offsets for local relative jumps, absolute address references,
   for multiple sizes. If another endianness is desired then make that a 
   configuration parameter.
-  Thus a single constructor can produce a sequence of an atoms not just
+  Thus a single constructor can produce a sequence of atoms not just
   bytes as before. This is motivated by the need to have complex data like
   TestLinkableObject that have multiple references in a single constructor.
   TestLinkableObject is like the ELF format.

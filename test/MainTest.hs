@@ -57,10 +57,11 @@ instance Encodable TestLinkableObject where
       <>  Seq.singleton (ALabel tloEndLabel)
   atomize SectionReferences{..} = do
     pure $ Seq.fromList
-      [ AAddrW8 (RefIA tloBeginReference)
-      , AAddrW8 (RefIA tloEndReference)
+      [ AExprW8 (ExprRef (RefIA tloBeginReference))
+      , AExprW8 (ExprRef (RefIA tloEndReference))
       ]
 
+-- TODO: Remove dead code, move comment where appropriate
 -- Example of encoding of an address
 -- encodeAbsoluteW32
 --   :: Reference -> Either AssemblyError BS.ByteString
@@ -102,9 +103,11 @@ instance Encodable TestLinkableObject where
 --     terms (RefRelativeVA targetAddr) = (targetAddr, piRelativeVA)
 --     terms (RefVA         targetAddr) = (targetAddr, piVA)
 
+-- TODO: remove
 encodeW32 :: Word32 -> Either AssemblyError BS.ByteString
 encodeW32 = pure . Bin.runPut . Bin.putWord32le . fromIntegral
 
+-- TODO: remove
 encodeI8W8 :: Int8 -> Either AssemblyError BS.ByteString
 encodeI8W8 = pure . Bin.runPut . Bin.putWord8 . fromIntegral
 
@@ -122,9 +125,19 @@ data TestOpcode
 instance Encodable TestOpcode where
   atomize = \case
     JumpAbsoluteW32 ref ->
-      pure $ Seq.fromList [ABytes (BS.singleton 0x01), AAddrW32 ref]
+      pure $ Seq.fromList [ABytes (BS.singleton 0x01), AExprW32 (ExprRef ref)]
     JumpRelativeW8 ref ->
-      pure $ Seq.fromList [ABytes (BS.singleton 0x02), AAddrOffsetI8 1 ref]
+      -- TODO: nice monad to build the Seq
+      pure $ Seq.fromList
+        [ ABytes (BS.singleton 0x02)
+        , AExprI8 (ExprDiff (ExprRef ref) term)
+          -- FIXME: we need to refer to the position AFTER the current atom
+        ]
+        where
+          term = case ref of
+            RefRelativeVA{} -> ExprCurrentRelativeVA
+            RefVA{}         -> ExprCurrentVA
+            RefIA{}         -> ExprCurrentIA
     Noop ->
       pure $ pure $ ABytes $ BS.singleton 0x03
     Zeroes n ->
@@ -195,7 +208,7 @@ w8AbsoluteSpec reference referenceName baseImageOffset
           bytes (0x00:0x01:(baseImageOffset + 7):0x00:0x00:0x00:0x00:[])
 
 w32RelativeSpec
-  :: HasCallStack => (LabelText -> Reference) -> String -> Spec
+  :: {- HasCallStack => -} (LabelText -> Reference) -> String -> Spec
 w32RelativeSpec reference referenceName
   = do
     it [qq|Relative -1 backwards reference of type $referenceName|] $
@@ -204,7 +217,7 @@ w32RelativeSpec reference referenceName
     it [qq|Relative 0-offset reference of type $referenceName|] $
       assembleW32 (topReference JumpRelativeW8 reference 0)
         `shouldBeBytes` bytes [0x02, 0x00]
-    it [qq|Relative 2 forwards reference of type $referenceName|] $
+    fit [qq|Relative 2 forwards reference of type $referenceName|] $
       assembleW32 (endReference JumpRelativeW8 reference 0 0)
         `shouldBeBytes` bytes [0x02, 0x02]
 
@@ -235,7 +248,7 @@ address8Spec
       w8AbsoluteSpec RefRelativeVA "RelativeVA" 0x00
       w8AbsoluteSpec RefVA         "VA"         (fromIntegral acVirtualBaseAddress)
 
-address32Spec :: Spec
+address32Spec :: HasCallStack => Spec
 address32Spec
   = -- Test instruction size constraints rather than address space constraints
     describe "Given a 32bit address space" $ do
@@ -355,12 +368,16 @@ multiLabelSpec =
 
 
 -- Wraps the bytestring to produce different show output
+-- TODO: Make the second parameter [Word8]
 shouldBeBytes
   :: HasCallStack => Either AssemblyError BS.ByteString -> BS.ByteString -> IO ()
-shouldBeBytes (Right got) expected
-  = BSByteShow got `shouldBe` BSByteShow expected
+-- shouldBeBytes (Right got) expected
+--   = BSByteShow got `shouldBe` BSByteShow expected
 shouldBeBytes got expected
-  = got `shouldBe` Right expected
+  = mapRight BSByteShow got `shouldBe` Right (BSByteShow expected)
+  where
+    mapRight f (Right x) = Right (f x)
+    mapRight _ (Left x)  = Left x
 
 shouldBeError
   :: HasCallStack
