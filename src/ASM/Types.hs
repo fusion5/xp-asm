@@ -4,6 +4,7 @@
 module ASM.Types
   ( Address
   , Atom (..)
+  , AtomizeM
   , Config (..)
   , Encodable (..)
   , ExprReference (..)
@@ -17,8 +18,9 @@ module ASM.Types
   , module ASM.Types.Position
   , module ASM.Types.AssemblyError
   , insertLabel
-  , updateLabels
-  , updatePosition
+  , runAtomize
+  -- , updateLabels
+  -- , updatePosition
   ) where
 
 import Common
@@ -27,9 +29,69 @@ import Data.Sequence as Seq
 import ASM.Types.Position hiding (mkPos)
 import ASM.Types.AssemblyError
 import Data.ByteString.Lazy as BS
+import Control.Monad.Trans.State.Lazy
 
 import qualified Data.Map as Map
 import qualified Data.Text as Text
+
+data StateAtomize
+  = StateAtomize
+    { atPosition :: Positions
+      -- | Atoms built so far
+    , atAtoms:: Seq Atom
+    }
+
+-- | The label scanner traverses the program and builds a Map of labels it
+-- encountered and their address information. This is its state
+data StateLabelScan address
+  = StateLabelScan
+    { -- | The position information contains:
+      --   - Current offset in generated image file (from the beginning)
+      --   - Current in-memory offset relative to the image base address. This
+      --     is needed because some output files (e.g. Portable Executable)
+      --     must specify to the loader where values are to be stored in
+      --     memory. This is initially 0 and it is often refered to as RVA
+      --     (Relative Value Address) in Microsoft documentation.
+      --   - Current memory address
+      asPosition :: Positions
+      -- | Encountered labels so far
+    , aslsLabels :: Map.Map LabelText Positions
+    }
+
+data StateEncode address
+  = StateEncode
+    { sesPosition :: Positions
+    , sesEncoded  :: BS.ByteString
+    }
+
+-- An atomize state monad with Either error handling
+type AtomizeM = StateT StateAtomize (Either AssemblyError)
+
+runAtomize :: Config -> AtomizeM () -> Either AssemblyError (Seq Atom)
+runAtomize Config{..} act
+  = do
+    virtualBaseAddress <- integralToPosition acVirtualBaseAddress
+    atAtoms <$> execStateT act (initialState virtualBaseAddress)
+  where
+    initialState virtualBaseAddress
+      = StateAtomize (Positions zero zero virtualBaseAddress) Seq.empty
+
+
+-- type AtomizeM a = ExceptT AssemblyError (State StateAtomize) a
+
+-- runAtomize :: Config -> AtomizeM () -> Either AssemblyError (Seq Atom)
+-- runAtomize Config{..} act
+--   = do
+--     virtualBaseAddress <- integralToPosition acVirtualBaseAddress
+--     let (errors, st)
+--           = runState
+--               (runExceptT act)
+--               (initialState virtualBaseAddress)
+--     errors
+--     pure $ atAtoms st
+--   where
+--     initialState virtualBaseAddress
+--       = StateAtomize (Positions zero zero virtualBaseAddress) Seq.empty
 
 -- | A Label helps to refer by name to the program point where the label is
 type LabelText = Text.Text
@@ -38,10 +100,10 @@ type LabelText = Text.Text
 -- | Why not use the Binary class? It doesn't easily allow nice error handling.
 class Encodable op where
   -- what to generate atoms for, without solved references
-  atomize :: op -> Either AssemblyError (Seq Atom)
+  atomize :: op -> AtomizeM ()
 
 instance Encodable op => Encodable [op] where
-  atomize [] = Right Seq.empty
+  atomize [] = pure ()
   atomize (x:xs) = (<>) <$> atomize x <*> atomize xs
 
 -- | Memory / program addresses have certain constraints. Note that this
@@ -101,30 +163,6 @@ data Config
       acVirtualBaseAddress :: Natural
     }
 
-data StateAtomize address
-  = StateAtomize
-    { atPosition :: Positions
-      -- | Atoms built so far
-    , atAtoms:: Seq Atom
-    }
-
--- | The label scanner traverses the program and builds a Map of labels it
--- encountered and their address information. This is its state
-data StateLabelScan address
-  = StateLabelScan
-    { -- | The position information contains:
-      --   - Current offset in generated image file (from the beginning)
-      --   - Current in-memory offset relative to the image base address. This
-      --     is needed because some output files (e.g. Portable Executable)
-      --     must specify to the loader where values are to be stored in
-      --     memory. This is initially 0 and it is often refered to as RVA
-      --     (Relative Value Address) in Microsoft documentation.
-      --   - Current memory address
-      asPosition :: Positions
-      -- | Encountered labels so far
-    , aslsLabels :: Map.Map LabelText Positions
-    }
-
 insertLabel
   :: LabelText
   -> Positions
@@ -135,22 +173,18 @@ insertLabel label positionInfo m
       Just _existingPosition -> Left $ ReferenceExists label
       Nothing -> pure $ Map.insert label positionInfo m
 
-updateLabels
-  :: (Map.Map LabelText Positions
-      -> Either AssemblyError (Map.Map LabelText Positions))
-  -> StateLabelScan address
-  -> Either AssemblyError (StateLabelScan address)
-updateLabels f s = do
-  s' <- f (aslsLabels s)
-  pure $ s { aslsLabels = s' }
+-- updateLabels
+--   :: (Map.Map LabelText Positions
+--       -> Either AssemblyError (Map.Map LabelText Positions))
+--   -> StateLabelScan address
+--   -> Either AssemblyError (StateLabelScan address)
+-- updateLabels f s = do
+--   s' <- f (aslsLabels s)
+--   pure $ s { aslsLabels = s' }
 
-updatePosition
-  :: (Positions -> Positions)
-  -> StateLabelScan address -> StateLabelScan address
-updatePosition f s = s { asPosition = f (asPosition s) }
+-- updatePosition
+--   :: (Positions -> Positions)
+--   -> StateLabelScan address -> StateLabelScan address
+-- updatePosition f s = s { asPosition = f (asPosition s) }
 
-data StateEncode address
-  = StateEncode
-    { sesPosition :: Positions
-    , sesEncoded  :: BS.ByteString
-    }
+

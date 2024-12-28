@@ -1,5 +1,6 @@
 module ASM
 ( assemble
+, emit
 , Config (..)
 ) where
 
@@ -9,6 +10,7 @@ import ASM.Types
 
 import Data.Sequence
 import Data.Int
+import Control.Monad.Trans.State.Lazy
 
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.Map as Map
@@ -34,16 +36,14 @@ instance Address Word8
 instance Address Word32
 instance Address Int8
 
-addOffsets
-  :: Config -> Positions -> Natural -> Either AssemblyError Positions
-addOffsets Config{..} a@Positions{..} n
+addOffsets :: Positions -> Natural -> Either AssemblyError Positions
+addOffsets a@Positions{..} n
   = do
-    basePosition <- integralToPosition acVirtualBaseAddress
-    opSize       <- integralToPosition n
+    opSize <- integralToPosition n
     pure $ a
       { piIA         = piIA `add` opSize
       , piRelativeVA = piRelativeVA `add` opSize
-      , piVA         = piRelativeVA `add` opSize `add` basePosition
+      , piVA         = piVA `add` opSize
       }
 
 -- | Extract all labels in the sequence in a Map. The key is the label and the
@@ -52,35 +52,18 @@ scanLabels
   :: Config
   -> Seq Atom
   -> Either AssemblyError (Map.Map LabelText Positions)
-scanLabels c@Config{..} atoms = do
+scanLabels Config{..} atoms = do
   basePosition <- integralToPosition acVirtualBaseAddress
   aslsLabels <$> foldM scan (initialState basePosition) atoms
   where
     initialState basePosition = StateLabelScan
       (Positions zero zero basePosition) Map.empty
-
-    scan s@StateLabelScan {asPosition = p@Positions{..}, ..} = \case
+    scan s@StateLabelScan {..} = \case
       ALabel label -> do
-        newLabels <- insertLabel label p aslsLabels
+        newLabels <- insertLabel label asPosition aslsLabels
         pure s { aslsLabels = newLabels }
-      AAlignIA n -> do
-        newIA  <- fst <$> alignHelper piIA n
-        pure s { asPosition = p { piIA = newIA }}
-      AAlignVA n -> do
-        newVA  <- fst <$> alignHelper piVA n
-        newRVA <- fst <$> alignHelper piRelativeVA n
-        pure s { asPosition = p { piVA = newVA, piRelativeVA = newRVA }}
-      AExprW8 _ -> do
-        newPosition <- addOffsets c p 1
-        pure s { asPosition = newPosition }
-      AExprI8 _ -> do
-        newPosition <- addOffsets c p 1
-        pure s { asPosition = newPosition }
-      AExprW32 _ -> do
-        newPosition <- addOffsets c p 4
-        pure s { asPosition = newPosition }
-      ABytes bs -> do
-        newPosition <- addOffsets c p (fromIntegral $ BS.length bs)
+      atom -> do
+        newPosition <- advance atom asPosition
         pure s { asPosition = newPosition }
 
 -- | Obvious
@@ -105,7 +88,7 @@ encode
   -> Map.Map LabelText Positions
   -> Seq Atom
   -> Either AssemblyError BS.ByteString
-encode c@Config{..} labelMap atoms
+encode Config{..} labelMap atoms
     = do
       basePosition <- integralToPosition acVirtualBaseAddress
       sesEncoded <$> foldM encodeAtom (initialState basePosition) atoms
@@ -125,7 +108,7 @@ encode c@Config{..} labelMap atoms
         labelText = getLabel ref
 
     emitBytes s@StateEncode{..} bytes = do
-      advancePosition <- addOffsets c sesPosition (fromIntegral $ BS.length bytes)
+      advancePosition <- addOffsets sesPosition (fromIntegral $ BS.length bytes)
       pure s
         { sesPosition = advancePosition -- advance the position with length bytes
         , sesEncoded = sesEncoded <> bytes
@@ -154,7 +137,7 @@ encode c@Config{..} labelMap atoms
         AExprW32 expr -> solveExpr pos expr >>= downcast >>= encodeW32  >>= emitBytes s
         AExprI8  expr -> solveExpr pos expr >>= downcast >>= encodeI8W8 >>= emitBytes s
         ABytes bytes -> do
-          advancePosition <- addOffsets c pos (fromIntegral $ BS.length bytes)
+          advancePosition <- addOffsets pos (fromIntegral $ BS.length bytes)
           pure s
             { sesPosition = advancePosition
             , sesEncoded = sesEncoded <> bytes
@@ -183,6 +166,33 @@ getter RefIA{}         = piIA
 getter RefRelativeVA{} = piRelativeVA
 getter RefVA{}         = piVA
 
+advance :: Atom -> Positions -> Either AssemblyError Positions
+advance atom p@Positions{..} = go atom
+  where
+    go ALabel{}     = pure p
+    go (AAlignIA n) = do
+      newIA <- fst <$> alignHelper piIA n
+      pure p { piIA = newIA }
+    go (AAlignVA n) = do
+      newVA  <- fst <$> alignHelper piVA n
+      newRVA <- fst <$> alignHelper piRelativeVA n
+      pure p { piVA = newVA, piRelativeVA = newRVA }
+    go AExprW8{}    = addOffsets p 1
+    go AExprI8{}    = addOffsets p 1
+    go AExprW32{}   = addOffsets p 1
+    go (ABytes bs)  = addOffsets p $ fromIntegral $ BS.length bs
+
+emit :: Atom -> AtomizeM ()
+emit atom
+  = do
+    StateAtomize{..} <- get
+    newPosition <- lift $ advance atom atPosition
+    modify (go newPosition)
+  where
+    go newPosition st@StateAtomize{..}
+      = st { atPosition = newPosition
+           , atAtoms    = atAtoms :|> atom }
+
 -- solveReferenceToPosition
 --   :: forall a . Address a
 --   => Reference -> Positions -> Either AssemblyError a
@@ -198,7 +208,7 @@ getter RefVA{}         = piVA
 assemble :: Encodable op => Config -> op -> Either AssemblyError BS.ByteString
 assemble cfg input
   = do
-    atoms    <- atomize input
+    atoms    <- runAtomize cfg $ atomize input
     labelMap <- scanLabels cfg atoms
     -- solveReferences cfg labelMap atoms >>= encodeSolved cfg
     encode cfg labelMap atoms

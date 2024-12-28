@@ -17,8 +17,6 @@ import ASM.Types.Position
 import Data.Int
 import Test.Utils
 
--- import qualified Data.Map as Map
-import qualified Data.Sequence as Seq
 import qualified Data.Binary.Put as Bin
 import qualified Data.ByteString.Lazy as BS
 
@@ -49,17 +47,13 @@ data TestLinkableObject
 
 instance Encodable TestLinkableObject where
   atomize Section{..} = do
-    subSection <- atomize tloSubsection
-    pure
-      $   Seq.singleton (ALabel tloBeginLabel)
-      <>  Seq.singleton (ABytes (BS.replicate (fromIntegral tloNumberOfZeroes) 0))
-      <>  subSection
-      <>  Seq.singleton (ALabel tloEndLabel)
+    emit $ ALabel tloBeginLabel
+    emit $ ABytes (BS.replicate (fromIntegral tloNumberOfZeroes) 0)
+    atomize tloSubsection
+    emit $ ALabel tloEndLabel
   atomize SectionReferences{..} = do
-    pure $ Seq.fromList
-      [ AExprW8 (ExprRef (RefIA tloBeginReference))
-      , AExprW8 (ExprRef (RefIA tloEndReference))
-      ]
+    emit $ AExprW8 (ExprRef (RefIA tloBeginReference))
+    emit $ AExprW8 (ExprRef (RefIA tloEndReference))
 
 -- TODO: Remove dead code, move comment where appropriate
 -- Example of encoding of an address
@@ -124,28 +118,22 @@ data TestOpcode
 
 instance Encodable TestOpcode where
   atomize = \case
-    JumpAbsoluteW32 ref ->
-      pure $ Seq.fromList [ABytes (BS.singleton 0x01), AExprW32 (ExprRef ref)]
-    JumpRelativeW8 ref ->
-      -- TODO: nice monad to build the Seq
-      pure $ Seq.fromList
-        [ ABytes (BS.singleton 0x02)
-        , AExprI8 (ExprDiff (ExprRef ref) term)
-          -- FIXME: we need to refer to the position AFTER the current atom
-        ]
+    JumpAbsoluteW32 ref -> do
+      emit $ ABytes (BS.singleton 0x01)
+      emit $ AExprW32 (ExprRef ref)
+    JumpRelativeW8 ref -> do
+      emit $ ABytes (BS.singleton 0x02)
+      emit $ AExprI8 (ExprDiff (ExprRef ref) term)
         where
           term = case ref of
             RefRelativeVA{} -> ExprCurrentRelativeVA
             RefVA{}         -> ExprCurrentVA
             RefIA{}         -> ExprCurrentIA
-    Noop ->
-      pure $ pure $ ABytes $ BS.singleton 0x03
-    Zeroes n ->
-      pure $ pure $ ABytes $ BS.replicate (fromIntegral n) 0x00
-    Label text ->
-      pure $ pure $ ALabel text
-    AlignIA n -> pure $ pure $ AAlignIA n
-    AlignVA n -> pure $ pure $ AAlignVA n
+    Noop       -> emit $ ABytes $ BS.singleton 0x03
+    Zeroes n   -> emit $ ABytes $ BS.replicate (fromIntegral n) 0x00
+    Label text -> emit $ ALabel text
+    AlignIA n  -> emit $ AAlignIA n
+    AlignVA n  -> emit $ AAlignVA n
 
 configW8 :: Config
 configW8 = Config{..} where acVirtualBaseAddress = 0x80

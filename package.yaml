@@ -25,6 +25,7 @@ dependencies:
   - type-natural
   - vector
   - interpolatedstring-perl6
+  - mtl
 
 ghc-options:
   - -Wall
